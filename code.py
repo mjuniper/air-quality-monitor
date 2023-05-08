@@ -58,7 +58,7 @@ reporters.append(display_reporter)
 reporters.append(InfluxDbReporter(secrets))
 # reporters.append(NotificationReporter(secrets))
 def report(data):
-  if data["co2"] > 0 and data["aqi"] > 0 and data["eco2"] > 0:
+  if data["co2"] != None and data["co2"] > 0 and data["aqi"] != None and data["aqi"] > 0 and data["eco2"] != None and data["eco2"] > 0:
     for reporter in reporters:
       reporter.report(data)
   else:
@@ -104,25 +104,27 @@ scd = adafruit_scd30.SCD30(stemma_i2c)
 scd.self_calibration_enabled = False
 scd.measurement_interval = sampling_interval
 scd.altitude = 1538
+scd.ambient_pressure = 0
 # it might be even better to set scd.ambient_pressure but i don't have a pressure sensor hooked up...
 if calibrate_scd:
   # https://www.sensirion.com/media/documents/33C09C07/620638B8/Sensirion_SCD30_Field_Calibration.pdf
-  scd.reset()
+  # scd.reset()
   scd.self_calibration_enabled = False
   scd.measurement_interval = sampling_interval
   scd.altitude = 1538
+  scd.ambient_pressure = 0
   display_reporter.showMessage('Waiting to calibrate scd30...')
   time.sleep(2 * 60)
   # use the scd30 to calibrate the ens160
-  if scd.temperature != None:
-    ens.temperature_compensation = scd.temperature
-  if scd.relative_humidity != None:
-    ens.humidity_compensation = scd.relative_humidity
-  time.sleep(15)
+  # if scd.temperature != None:
+  #   ens.temperature_compensation = scd.temperature
+  # if scd.relative_humidity != None:
+  #   ens.humidity_compensation = scd.relative_humidity
+  # time.sleep(15)
   # then use the ens160 to calibrate the scd30
-  scd.forced_recalibration_reference = ens.eCO2
+  # scd.forced_recalibration_reference = ens.eCO2
   # or we could just expose it to fresh air and use 400
-  # scd.forced_recalibration_reference = 400
+  scd.forced_recalibration_reference = 425
   display_reporter.showMessage('Calibrated scd30!')
   time.sleep(2)
 # TODO: do i need to worry about data_available?
