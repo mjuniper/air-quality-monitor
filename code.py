@@ -13,34 +13,33 @@ from reporters.db import InfluxDbReporter
 # from reporters.notifier import NotificationReporter
 # import gc
 
-# TODO NEXT:
-#   - i'm not sure the forced_recalibration_reference is persisting....
-#     - either figure that out or
-#     - always calibrate it
+# TODO:
 #   - get display reporter working better
-#   - DRY up the code around the scd30
-
-# 1. make the display reporter do nothing but print data to the screen
-# 2. enable one sensor at a time and validate that we are getting reasonable data
-#   1. i think one of them suggests ignoring the first reading
-#   2. one or more might suggest a burn-in or calibration time?
-# 3. enable all sensors
-#   1. it should be resilient in that if any of the sensors go wonky, it doesn't bring the whole thing down
-# 4. get the db reporter working
-# 5. create graphana dashboard
-# 6. get the display reporter writing to the display
-# 7. get the notification reporter working
-# 8. create (3?) different display modes that display different data
-# 8. use asyncio (or something) to make it respond to button presses by changing the display mode
+#     - start with just writing the most important data in a nice readable way
+#     - create (3?) different display modes that display different data
+#     - make use of thresholds
+#   - get the notification reporter working
+#     - make use of thresholds
+#   - use asyncio (or something) to make it respond to button presses by changing the display mode
+#   - review TODOs
+#   - refactor...
+#   - in an effort to make it resilient, i transiently write some errors to the screen
+#      and others i only ever print to the serial console... it would be nice to log errors somehow
+#      and print something persistently to the screen to indicate that i should check those logs
 
 # TODO: we will probably want this to be something like 2 - 5 minutes
 # but in development we want a shorter interval to better understand if it is working
 sampling_interval = 2 * 60
 # sampling_interval = 30
 
-calibrate_button = digitalio.DigitalInOut(board.D2)
-calibrate_button.switch_to_input(pull=digitalio.Pull.DOWN)
-calibrate_scd = calibrate_button.value
+# check buttons at startup...
+# hold D1 to calibrate scd30 based on eCO2 reading from the ens160
+calibrate_ambient = digitalio.DigitalInOut(board.D1)
+calibrate_ambient.switch_to_input(pull=digitalio.Pull.DOWN)
+# hold D2 to calibrate scd30 based on a value of 425 which should approximate fresh outside air
+calibrate_outside = digitalio.DigitalInOut(board.D2)
+calibrate_outside.switch_to_input(pull=digitalio.Pull.DOWN)
+calibrate_scd = calibrate_ambient.value or calibrate_outside.value
 
 # #####
 # setup neopixel
@@ -53,12 +52,14 @@ pixel.brightness = .6
 # #####
 reporters = []
 # TODO: set up the reporters appropriately
+# TODO: i could factor this into a reporter_manager class
 display_reporter = DisplayReporter(secrets)
 reporters.append(display_reporter)
 reporters.append(InfluxDbReporter(secrets))
 # reporters.append(NotificationReporter(secrets))
+
 def report(data):
-  if data["co2"] != None and data["co2"] > 0 and data["aqi"] != None and data["aqi"] > 0 and data["eco2"] != None and data["eco2"] > 0:
+  if data["co2"] != None and data["co2"] > 400 and data["aqi"] != None and data["aqi"] > 0 and data["eco2"] != None and data["eco2"] > 0:
     for reporter in reporters:
       reporter.report(data)
   else:
@@ -100,33 +101,37 @@ ens = adafruit_ens160.ENS160(stemma_i2c)
 
 # connect to scd30 over I2C
 scd = adafruit_scd30.SCD30(stemma_i2c)
-
-scd.self_calibration_enabled = False
-scd.measurement_interval = sampling_interval
-scd.altitude = 1538
-scd.ambient_pressure = 0
+# setup scd30 params
+# we check the values first because the non-volatile memory that stores this stuff may have a limited number of writes
+if scd.self_calibration_enabled != False:
+  scd.self_calibration_enabled = False
+if scd.measurement_interval != sampling_interval:
+  scd.measurement_interval = sampling_interval
+if scd.altitude != 1538:
+  scd.altitude = 1538
 # it might be even better to set scd.ambient_pressure but i don't have a pressure sensor hooked up...
+if scd.ambient_pressure != 0:
+  scd.ambient_pressure = 0
+
 if calibrate_scd:
   # https://www.sensirion.com/media/documents/33C09C07/620638B8/Sensirion_SCD30_Field_Calibration.pdf
-  # scd.reset()
-  scd.self_calibration_enabled = False
-  scd.measurement_interval = sampling_interval
-  scd.altitude = 1538
-  scd.ambient_pressure = 0
   display_reporter.showMessage('Waiting to calibrate scd30...')
   time.sleep(2 * 60)
   # use the scd30 to calibrate the ens160
-  # if scd.temperature != None:
-  #   ens.temperature_compensation = scd.temperature
-  # if scd.relative_humidity != None:
-  #   ens.humidity_compensation = scd.relative_humidity
-  # time.sleep(15)
-  # then use the ens160 to calibrate the scd30
-  # scd.forced_recalibration_reference = ens.eCO2
-  # or we could just expose it to fresh air and use 400
-  scd.forced_recalibration_reference = 425
+  if calibrate_ambient:
+    if scd.temperature != None:
+      ens.temperature_compensation = scd.temperature
+    if scd.relative_humidity != None:
+      ens.humidity_compensation = scd.relative_humidity
+    # then use the ens160 to calibrate the scd30
+    scd.forced_recalibration_reference = ens.eCO2
+  else:
+    # or we could just expose it to fresh air and use 425
+    scd.forced_recalibration_reference = 425
+  
   display_reporter.showMessage('Calibrated scd30!')
   time.sleep(2)
+
 # TODO: do i need to worry about data_available?
 # TODO: do i need to ignore the first co2 reading?
 # see https://learn.adafruit.com/adafruit-scd30/python-circuitpython
@@ -134,13 +139,14 @@ if calibrate_scd:
 scd_params = {
     "forced_recalibration_reference": scd.forced_recalibration_reference,
     "altitude": scd.altitude,
+    "ambient_pressure": scd.ambient_pressure,
     "measurement_interval": scd.measurement_interval,
     "self_calibration_enabled": scd.self_calibration_enabled
   }
 msg = '\n'.join(f'{k}={v}' for k,v in scd_params.items())
 display_reporter.showMessage(msg)
 
-time.sleep(sampling_interval)
+time.sleep(15)
 
 # #####
 # loop!
@@ -162,7 +168,7 @@ while True:
     ens.temperature_compensation = scd.temperature
     ens.humidity_compensation = scd.relative_humidity
   except Exception as e:
-    print('Error calibrating ens160: ' + str(e))
+    display_reporter.showError('Error calibrating ens160: ' + str(e))
 
   # #####
   # read the sensors
@@ -195,7 +201,7 @@ while True:
       "particles_100um": pm25_data["particles 100um"]
     }
   except Exception as e:
-    print('Error reading sensors: ' + str(e))
+    display_reporter.showError('Error reading sensors: ' + str(e))
 
   # #####
   # send data to appropriate places (influxdb, the screen, a log file, an alert to my phone)
