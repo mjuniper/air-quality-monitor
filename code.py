@@ -16,12 +16,12 @@ from reporters.db import InfluxDbReporter
 # TODO:
 #   - get display reporter working better
 #     - start with just writing the most important data in a nice readable way
-#     - create (3?) different display modes that display different data
 #     - make use of thresholds
+#     - create (3?) different display modes that display different data
 #   - get the notification reporter working
 #     - make use of thresholds
-#   - use asyncio (or something) to make it respond to button presses by changing the display mode
 #   - review TODOs
+#   - use asyncio (or something) to make it respond to button presses by changing the display mode
 #   - refactor...
 #   - in an effort to make it resilient, i transiently write some errors to the screen
 #      and others i only ever print to the serial console... it would be nice to log errors somehow
