@@ -26,11 +26,12 @@ from reporters.db import InfluxDbReporter
 #   - in an effort to make it resilient, i transiently write some errors to the screen
 #      and others i only ever print to the serial console... it would be nice to log errors somehow
 #      and print something persistently to the screen to indicate that i should check those logs
+#     - https://learn.adafruit.com/circuitpython-essentials/circuitpython-storage
 
 # TODO: we will probably want this to be something like 2 - 5 minutes
 # but in development we want a shorter interval to better understand if it is working
-sampling_interval = 2 * 60
-# sampling_interval = 30
+# sampling_interval = 2 * 60
+sampling_interval = 10
 
 # check buttons at startup...
 # hold D1 to calibrate scd30 based on eCO2 reading from the ens160
@@ -45,7 +46,7 @@ calibrate_scd = calibrate_ambient.value or calibrate_outside.value
 # setup neopixel
 # #####
 pixel = neopixel.NeoPixel(board.NEOPIXEL, 1)
-pixel.brightness = .6
+pixel.brightness = .2
 
 # #####
 # setup reporters
@@ -63,18 +64,24 @@ def report(data):
     for reporter in reporters:
       reporter.report(data)
   else:
-    display_reporter.showError("Skipping reporting data\nbecause it seems bogus.")
+    props = ("co2", "eco2", "aqi")
+
+    def isInList (prop):
+      return props.count(prop[0]) > 0
+
+    msg = '\n'.join(f'{k}={v}' for k,v in filter(isInList, data.items()))
+    display_reporter.showError("Skipping reporting data because it seems bogus.\n" + msg)
 
 # #####
 # connect to the network
 # #####
-display_reporter.showMessage("Connecting to\n%s" % secrets["wifi"]["ssid"])
+display_reporter.showMessage("Connecting to %s" % secrets["wifi"]["ssid"])
 try:
   wifi.radio.connect(secrets["wifi"]["ssid"], secrets["wifi"]["password"])
 except Exception as e:
-  display_reporter.showMessage("Error connecting\nto network: " + str(e))
+  display_reporter.showMessage("Error connecting to network: " + str(e))
 
-display_reporter.showMessage("Connected to\n%s!" % secrets["wifi"]["ssid"])
+display_reporter.showMessage("Connected to %s!" % secrets["wifi"]["ssid"])
 
 time.sleep(2)
 
@@ -136,17 +143,17 @@ if calibrate_scd:
 # TODO: do i need to ignore the first co2 reading?
 # see https://learn.adafruit.com/adafruit-scd30/python-circuitpython
 
-scd_params = {
-    "forced_recalibration_reference": scd.forced_recalibration_reference,
-    "altitude": scd.altitude,
-    "ambient_pressure": scd.ambient_pressure,
-    "measurement_interval": scd.measurement_interval,
-    "self_calibration_enabled": scd.self_calibration_enabled
-  }
-msg = '\n'.join(f'{k}={v}' for k,v in scd_params.items())
-display_reporter.showMessage(msg)
+# scd_params = {
+#     "forced_recalibration_reference": scd.forced_recalibration_reference,
+#     "altitude": scd.altitude,
+#     "ambient_pressure": scd.ambient_pressure,
+#     "measurement_interval": scd.measurement_interval,
+#     "self_calibration_enabled": scd.self_calibration_enabled
+#   }
+# msg = '\n'.join(f'{k}={v}' for k,v in scd_params.items())
+# display_reporter.showMessage(msg)
 
-time.sleep(15)
+time.sleep(5)
 
 # #####
 # loop!
