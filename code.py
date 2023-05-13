@@ -14,10 +14,7 @@ from reporters.db import InfluxDbReporter
 # import gc
 
 # TODO:
-#   - get display reporter working better
-#     - start with just writing the most important data in a nice readable way
-#     - make use of thresholds
-#     - create (3?) different display modes that display different data
+#   - create different display modes that display different data
 #   - get the notification reporter working
 #     - make use of thresholds
 #   - review TODOs
@@ -30,8 +27,8 @@ from reporters.db import InfluxDbReporter
 
 # TODO: we will probably want this to be something like 2 - 5 minutes
 # but in development we want a shorter interval to better understand if it is working
-# sampling_interval = 2 * 60
-sampling_interval = 10
+sampling_interval = 2 * 60
+# sampling_interval = 10
 
 # check buttons at startup...
 # hold D1 to calibrate scd30 based on eCO2 reading from the ens160
@@ -52,7 +49,6 @@ pixel.brightness = .2
 # setup reporters
 # #####
 reporters = []
-# TODO: set up the reporters appropriately
 # TODO: i could factor this into a reporter_manager class
 display_reporter = DisplayReporter(secrets)
 reporters.append(display_reporter)
@@ -96,7 +92,6 @@ time.sleep(2)
 # TODO: what does frequency even mean in this context?
 stemma_i2c = busio.I2C(board.SCL, board.SDA, frequency=50000)
 
-# TODO: setup the sensors
 # Connect to a PM2.5 sensor over I2C
 pm25 = PM25_I2C(stemma_i2c)
 # read with pm25.read()
@@ -109,7 +104,7 @@ ens = adafruit_ens160.ENS160(stemma_i2c)
 # connect to scd30 over I2C
 scd = adafruit_scd30.SCD30(stemma_i2c)
 # setup scd30 params
-# we check the values first because the non-volatile memory that stores this stuff may have a limited number of writes
+# we check the values before setting because the non-volatile memory that stores this stuff may have a limited number of writes
 if scd.self_calibration_enabled != False:
   scd.self_calibration_enabled = False
 if scd.measurement_interval != sampling_interval:
@@ -180,7 +175,6 @@ while True:
   # #####
   # read the sensors
   # #####
-  # TODO: read the sensors - i think we should collect absolutely everything...
   # TODO: we want to not bring the whole thing down when there is an error
   # this works for now but we can do better...
   # if only one sensor fails, we should read and report the others
