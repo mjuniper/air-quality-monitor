@@ -2,6 +2,7 @@ import board
 import busio
 import digitalio
 import neopixel
+from adafruit_ticks import ticks_ms, ticks_add, ticks_diff
 import time
 import wifi
 from adafruit_pm25.i2c import PM25_I2C
@@ -27,8 +28,8 @@ from reporters.db import InfluxDbReporter
 
 # TODO: we will probably want this to be something like 2 - 5 minutes
 # but in development we want a shorter interval to better understand if it is working
-sampling_interval = 2 * 60
-# sampling_interval = 10
+sampling_interval = 2 * 60 * 1000
+# sampling_interval = 10 * 1000
 
 # check buttons at startup...
 # hold D1 to calibrate scd30 based on eCO2 reading from the ens160
@@ -38,6 +39,9 @@ calibrate_ambient.switch_to_input(pull=digitalio.Pull.DOWN)
 calibrate_outside = digitalio.DigitalInOut(board.D2)
 calibrate_outside.switch_to_input(pull=digitalio.Pull.DOWN)
 calibrate_scd = calibrate_ambient.value or calibrate_outside.value
+# press button 0 to change display mode
+change_display_mode = digitalio.DigitalInOut(board.D0)
+change_display_mode.switch_to_input(pull=digitalio.Pull.UP)
 
 # #####
 # setup neopixel
@@ -56,17 +60,19 @@ reporters.append(InfluxDbReporter(secrets))
 # reporters.append(NotificationReporter(secrets))
 
 def report(data):
-  if data["co2"] != None and data["co2"] > 400 and data["aqi"] != None and data["aqi"] > 0 and data["eco2"] != None and data["eco2"] > 0:
+  # TODO: reconsider how/where we validate data
+  # if data["co2"] != None and data["co2"] > 400 and data["aqi"] != None and data["aqi"] > 0 and data["eco2"] != None and data["eco2"] > 0:
+  if data["co2"] != None and data["aqi"] != None and data["eco2"] != None:
     for reporter in reporters:
       reporter.report(data)
-  else:
-    props = ("co2", "eco2", "aqi")
+  # else:
+  #   props = ("co2", "eco2", "aqi")
 
-    def isInList (prop):
-      return props.count(prop[0]) > 0
+  #   def isInList (prop):
+  #     return props.count(prop[0]) > 0
 
-    msg = '\n'.join(f'{k}={v}' for k,v in filter(isInList, data.items()))
-    display_reporter.showError("Skipping reporting data because it seems bogus.\n" + msg)
+  #   msg = ', '.join(f'{k}={v}' for k,v in filter(isInList, data.items()))
+  #   display_reporter.showError("Skipping reporting data because it seems bogus." + msg)
 
 # #####
 # connect to the network
@@ -104,19 +110,25 @@ ens = adafruit_ens160.ENS160(stemma_i2c)
 # connect to scd30 over I2C
 scd = adafruit_scd30.SCD30(stemma_i2c)
 # setup scd30 params
-# we check the values before setting because the non-volatile memory that stores this stuff may have a limited number of writes
-if scd.self_calibration_enabled != False:
-  scd.self_calibration_enabled = False
-if scd.measurement_interval != sampling_interval:
-  scd.measurement_interval = sampling_interval
-if scd.altitude != 1538:
-  scd.altitude = 1538
-# it might be even better to set scd.ambient_pressure but i don't have a pressure sensor hooked up...
-if scd.ambient_pressure != 0:
-  scd.ambient_pressure = 0
+
+def initScd30():
+  # we check the values before setting because the non-volatile memory that stores this stuff may have a limited number of writes
+  if scd.self_calibration_enabled != False:
+    scd.self_calibration_enabled = False
+  if scd.measurement_interval != sampling_interval // 1000:
+    scd.measurement_interval = sampling_interval // 1000
+  if scd.altitude != 1538:
+    scd.altitude = 1538
+  # it might be even better to set scd.ambient_pressure but i don't have a pressure sensor hooked up...
+  if scd.ambient_pressure != 0:
+    scd.ambient_pressure = 0
+
+initScd30()
 
 if calibrate_scd:
   # https://www.sensirion.com/media/documents/33C09C07/620638B8/Sensirion_SCD30_Field_Calibration.pdf
+  scd.reset()
+  initScd30()
   display_reporter.showMessage('Waiting to calibrate scd30...')
   time.sleep(2 * 60)
   # use the scd30 to calibrate the ens160
@@ -147,75 +159,89 @@ if calibrate_scd:
 #   }
 # msg = '\n'.join(f'{k}={v}' for k,v in scd_params.items())
 # display_reporter.showMessage(msg)
-
-time.sleep(5)
+# time.sleep(5)
 
 # #####
 # loop!
 # #####
+sensor_clock = ticks_ms()
+first_run = True
+last_mode_change = time.time()
 while True:
-  pixel.fill((0, 255, 0))
+  if not change_display_mode.value and time.time() - last_mode_change > 0.5:
+    display_reporter.incrementMode()
+    last_mode_change = last_mode_change = time.time()
 
-  # #####
-  # check the network?
-  # todo: if we don't have network, print that info to screen and make sure it stays there...
-  # #####
+  if first_run or ticks_diff(ticks_ms(), sensor_clock) > sampling_interval:
 
-  # #####
-  # update sensor calibration
-  # #####
-  # TODO: we want to not bring the whole thing down when there is an error
-  # this works for now but we can do better...
-  try:
-    ens.temperature_compensation = scd.temperature
-    ens.humidity_compensation = scd.relative_humidity
-  except Exception as e:
-    display_reporter.showError('Error calibrating ens160: ' + str(e))
+    pixel.fill((0, 255, 0))
 
-  # #####
-  # read the sensors
-  # #####
-  # TODO: we want to not bring the whole thing down when there is an error
-  # this works for now but we can do better...
-  # if only one sensor fails, we should read and report the others
-  # it would also be good to know how long it has been failing
-  try:
-    pm25_data = pm25.read()
-    data = {
-      # "data_available": scd.data_available,
-      "co2": scd.CO2, # CO2 concentration in PPM
-      "temp": scd.temperature, # current temperature in degrees C
-      "hum": scd.relative_humidity, # relative humidity in %rH
-      "aqi": ens.AQI, # air quality index: 1 - 5
-      "voc": ens.TVOC, # ppb
-      "pm25": pm25_data["pm25 env"],
-      "eco2": ens.eCO2,
-      # the above are the main ones we are interested in
-      # but we'll keep these too:
-      "pm10": pm25_data["pm10 env"],
-      "pm100": pm25_data["pm100 env"],
-      "particles_03um": pm25_data["particles 03um"],
-      "particles_05um": pm25_data["particles 05um"],
-      "particles_10um": pm25_data["particles 10um"],
-      "particles_25um": pm25_data["particles 25um"],
-      "particles_50um": pm25_data["particles 50um"],
-      "particles_100um": pm25_data["particles 100um"]
-    }
-  except Exception as e:
-    display_reporter.showError('Error reading sensors: ' + str(e))
+    # #####
+    # check the network?
+    # todo: if we don't have network, print that info to screen and make sure it stays there...
+    # #####
 
-  # #####
-  # send data to appropriate places (influxdb, the screen, a log file, an alert to my phone)
-  report(data)
-  # #####
+    # #####
+    # update sensor calibration
+    # #####
+    # TODO: we want to not bring the whole thing down when there is an error
+    # this works for now but we can do better...
+    try:
+      if scd.temperature != None:
+        ens.temperature_compensation = scd.temperature
+      if scd.relative_humidity != None:
+        ens.humidity_compensation = scd.relative_humidity
+    except Exception as e:
+      display_reporter.showError('Error calibrating ens160: ' + str(e))
 
-  pixel.fill((0, 0, 0))
+    # #####
+    # read the sensors
+    # #####
+    # TODO: we want to not bring the whole thing down when there is an error
+    # this works for now but we can do better...
+    # if only one sensor fails, we should read and report the others
+    # it would also be good to know how long it has been failing
+    try:
+      pm25_data = pm25.read()
+      data = {
+        # "data_available": scd.data_available,
+        "co2": scd.CO2, # CO2 concentration in PPM
+        "temp": scd.temperature, # current temperature in degrees C
+        "hum": scd.relative_humidity, # relative humidity in %rH
+        "aqi": ens.AQI, # air quality index: 1 - 5
+        "voc": ens.TVOC, # ppb
+        "pm25": pm25_data["pm25 env"],
+        "eco2": ens.eCO2,
+        # the above are the main ones we are interested in
+        # but we'll keep these too:
+        "pm10": pm25_data["pm10 env"],
+        "pm100": pm25_data["pm100 env"],
+        "particles_03um": pm25_data["particles 03um"],
+        "particles_05um": pm25_data["particles 05um"],
+        "particles_10um": pm25_data["particles 10um"],
+        "particles_25um": pm25_data["particles 25um"],
+        "particles_50um": pm25_data["particles 50um"],
+        "particles_100um": pm25_data["particles 100um"]
+      }
+    except Exception as e:
+      display_reporter.showError('Error reading sensors: ' + str(e))
 
-  # i think i have a memory leak... or maybe that is just the way python works???
-  # free memory continuously falls with every iteration of the loop until it gets down to a few k
-  # then it goes back up - presumably because garbage collection happened
-  # if i manually do garbage collection as below, it stays high
-  # but i think we will let garbage collection happen on its own
-  # gc.collect()
+    # #####
+    # send data to appropriate places (influxdb, the screen, a log file, an alert to my phone)
+    report(data)
+    # #####
 
-  time.sleep(sampling_interval)
+    pixel.fill((0, 0, 0))
+
+    # i think i have a memory leak... or maybe that is just the way python works???
+    # free memory continuously falls with every iteration of the loop until it gets down to a few k
+    # then it goes back up - presumably because garbage collection happened
+    # if i manually do garbage collection as below, it stays high
+    # but i think we will let garbage collection happen on its own
+    # gc.collect())
+
+    sensor_clock = ticks_add(sensor_clock, sampling_interval)
+
+    if first_run:
+      sensor_clock = ticks_ms()
+      first_run = False
