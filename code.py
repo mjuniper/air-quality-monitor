@@ -130,8 +130,10 @@ if calibrate_scd:
   scd.reset()
   initScd30()
   display_reporter.showMessage('Waiting to calibrate scd30...')
-  time.sleep(2 * 60)
+  time.sleep(3 * 60)
   # use the scd30 to calibrate the ens160
+  # first we will actually use the scd 130 temp and humidity to calibrate the ens160
+  # we do this below every time we read the sensors but we want to do it here before we calibrate the scd30
   if calibrate_ambient:
     if scd.temperature != None:
       ens.temperature_compensation = scd.temperature
@@ -168,7 +170,7 @@ sensor_clock = ticks_ms()
 first_run = True
 last_mode_change = time.time()
 while True:
-  if not change_display_mode.value and time.time() - last_mode_change > 0.5:
+  if not change_display_mode.value and time.time() - last_mode_change > 0.8:
     display_reporter.incrementMode()
     last_mode_change = last_mode_change = time.time()
 

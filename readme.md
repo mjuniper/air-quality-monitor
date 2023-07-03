@@ -12,6 +12,32 @@ https://www.airthings.com/view-plus
 - Temp, humidity, pressure
 - Radon
 
+===
+As built:
+- scd30 measures CO2 and temp
+- ens160 measures VOCs
+- pm25 measures pm2.5, pm10, pm100
+- read the sensors every two minutes
+	- also calibrate the temp and humidity of the ens160 based on the readings from the scd30
+- write the data to the screen
+- write the data to the influxdb database running on pi-anemoi
+- change display mode by pressing button 0
+- press button 1 or 2 while powering it on causes it to calibrate the scd30
+	- button 1 calibrates against eCO2 reading from the ens160 this is probably not very accurate
+	- button 2 calibrates against outside air and assumes it is 425 which should be in the right ballpark
+
+TODO:
+- reconnect to wifi if we lose connection
+	- also do this for the basement monitor
+- skip reading the sensors if the data is invalid
+	- i already try to do this but it needs improvement
+- the way i have coded it to respond but button 0 is janky
+- it would be nice to measure radon
+- it would be nice to measure CO
+- i need an enclosure
+===
+
+Original plan:
 1. read sensors every 5 minutes. I could do it more frequently but the airthings has an interval of 5 minutes and i think we should not update the e-ink display (if that is what i end up using) any more frequently than every 3 minutes.
 2. send data to reporters
 	1. post data to influxdb

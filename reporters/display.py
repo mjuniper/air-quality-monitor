@@ -152,7 +152,7 @@ class DisplayReporter:
     pm10_label = bitmap_label.Label(terminalio.FONT, text="PM 10", scale=2, padding_bottom=padding)
     pm10_label.anchor_point = (0.5, 1)
     pm10_label.anchored_position = (board.DISPLAY.width // 2, board.DISPLAY.height - padding)
-    self.pm25_labels.append((pm10_label, pm10_value))
+    self.pm10_labels.append((pm10_label, pm10_value))
 
     pm100_value = bitmap_label.Label(terminalio.FONT, text="000", scale=3, padding_top=padding)
     pm100_value.anchor_point = (0.5, 0)
@@ -160,7 +160,7 @@ class DisplayReporter:
     pm100_label = bitmap_label.Label(terminalio.FONT, text="PM 100", scale=2, padding_bottom=padding)
     pm100_label.anchor_point = (0.5, 1)
     pm100_label.anchored_position = (200, board.DISPLAY.height - padding)
-    self.pm25_labels.append((pm100_label, pm100_value))
+    self.pm100_labels.append((pm100_label, pm100_value))
     
     self.reporter_group_3.append(pm2_value_2)
     self.reporter_group_3.append(pm2_label_2)
@@ -241,11 +241,11 @@ class DisplayReporter:
       self.setValues(self.pm25_labels, pm25, pm2_color)
 
       pm10 = data["pm10"]
-      pm10_color = self.getColor(pm10, self.thresholds["pm25_caution"], self.thresholds["pm25_danger"])
+      pm10_color = self.getColor(pm10, self.thresholds["pm10_caution"], self.thresholds["pm10_danger"])
       self.setValues(self.pm10_labels, pm10, pm10_color)
 
       pm100 = data["pm100"]
-      pm100_color = self.getColor(pm100, self.thresholds["pm25_caution"], self.thresholds["pm25_danger"])
+      pm100_color = self.getColor(pm100, self.thresholds["pm100_caution"], self.thresholds["pm100_danger"])
       self.setValues(self.pm100_labels, pm100, pm100_color)
 
       voc = data["voc"]
