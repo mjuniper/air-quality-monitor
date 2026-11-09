@@ -20,6 +20,10 @@ class InfluxDbReporter:
     self.session = adafruit_requests.Session(pool, ssl.create_default_context())
     
   def report(self, data):
+    if not wifi.radio.connected or wifi.radio.ipv4_address is None:
+      print('InfluxDbReporter: skipping report; Wi-Fi is not connected.')
+      return
+
     try:
       # influxdb "line protocol"
       # https://docs.influxdata.com/influxdb/v1.8/guides/write_data/#write-data-using-the-influxdb-api
@@ -31,7 +35,11 @@ class InfluxDbReporter:
       # headers.setdefault('Content-Type', 'application/octet-stream')
       # headers.setdefault('Accept', 'application/x-msgpack')
 
-      response = self.session.post(url, data=point, headers=headers)
+      response = self.session.post(url, data=point, headers=headers, timeout=10)
+      try:
+        if not 200 <= response.status_code < 300:
+          print('InfluxDbReporter error: HTTP ' + str(response.status_code))
+      finally:
+        response.close()
     except Exception as e:
       print('InfluxDbReporter error: ' + str(e))
-

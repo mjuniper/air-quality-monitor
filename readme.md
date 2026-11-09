@@ -1,7 +1,12 @@
 TODO:
-	- handle reconnecting to the network
-	- update to keep secrets in settings.toml
 	- wire in the new sensor
+	- get the notification reporter working
+	- see TODOS in code files
+	- update to keep secrets in settings.toml
+	- use asyncio (or something) to make it respond to button presses by changing the display mode - do this now but it is janky
+  - in an effort to make it resilient, i transiently write some errors to the screen
+    - and others i only ever print to the serial console... it would be nice to log errors somehow and print something persistently to the screen to indicate that i should check those logs
+    - https://learn.adafruit.com/circuitpython-essentials/circuitpython-storage
 	- ask gemini for other ways to improve the code (and make it more pythonic)
 	- update this file...
 		- as built
@@ -27,22 +32,35 @@ Use **Terminal > Run Task** to run the tasks in [.vscode/tasks.json](.vscode/tas
   any unrelated ones; it does not remove unused libraries.
 - **install_deps**: Install libraries from the committed `requirements.txt` onto
   the board. Use this when setting up a fresh board.
-- **deploy**: Copy Python files in `reporters/` first, then `code.py`, and flush
-  pending writes. This does not copy `lib/`, snippets, Git/editor files, or
-  credentials, and does not delete existing board files. CircuitPython may reload
-  while files are copied; check the serial console after deployment.
+- **deploy**: Copy local `settings.toml`, Python files in `reporters/`, then
+  `code.py`, and flush pending writes. Local settings overwrite the board's
+  settings on every deployment; deployment fails before copying if the local
+  file is missing. This does not copy `lib/`, snippets, Git/editor files, or
+  `secrets.py`, and does not delete existing board files. CircuitPython may
+  reload while files are copied; check the serial console after deployment.
 
-For initial setup, run `add_deps`, restore the board's private configuration, then
-`deploy`. Keep `secrets.py` (while the application still uses it) and `settings.toml`
-on the board; they are excluded from Git and routine deployment. Back them up
-separately before firmware or bootloader upgrades.
+For initial setup, run `add_deps`, configure local `settings.toml`, then `deploy`.
+Keep `settings.toml` excluded from Git even though it is deployed. Restore
+`secrets.py` separately if the application still uses it; it is excluded from Git
+and deployment. Back up private configuration separately before firmware or
+bootloader upgrades.
 
 For library updates, run `circup --path /Volumes/CIRCUITPY update --all`, test the
 application, then run `circup --path /Volumes/CIRCUITPY freeze -r` and review the
 updated dependency list. Circup selects compiled libraries for the board's
 CircuitPython version; the repository's existing `lib/` is not deployed.
 
+## Network reporting
 
+The database and notification reporters skip requests and log to the serial
+console when Wi-Fi is disconnected or no IPv4 address is available. Sensor
+sampling and display reporting can continue while CircuitPython reconnects.
+Requests use a 10-second socket timeout and log failures; skipped readings are
+not queued. Notification cooldown starts only after Pushover confirms acceptance.
+The reporters do not run their own reconnect loops.
+
+Run the host-side reporter tests without board hardware using
+`python3 -m unittest discover -s tests`.
 
 https://circuitpython.org/board/adafruit_feather_esp32s3_reverse_tft/
 

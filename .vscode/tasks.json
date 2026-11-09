@@ -7,7 +7,7 @@
       "command": "/bin/bash",
       "args": [
         "-c",
-        "set -euo pipefail; if [ ! -d /Volumes/CIRCUITPY ] || [ ! -f /Volumes/CIRCUITPY/boot_out.txt ]; then printf '%s\\n' 'CIRCUITPY is not mounted. Connect the board in CircuitPython mode.' >&2; exit 1; fi; rsync -av --exclude='._*' --exclude='__pycache__/' --include='*/' --include='*.py' --exclude='*' reporters/ /Volumes/CIRCUITPY/reporters/; cp code.py /Volumes/CIRCUITPY/code.py; sync"
+        "set -euo pipefail; if [ ! -d /Volumes/CIRCUITPY ] || [ ! -f /Volumes/CIRCUITPY/boot_out.txt ]; then printf '%s\\n' 'CIRCUITPY is not mounted. Connect the board in CircuitPython mode.' >&2; exit 1; fi; if [ ! -f settings.toml ]; then printf '%s\\n' 'Local settings.toml is missing. Create it before deploying.' >&2; exit 1; fi; cp settings.toml /Volumes/CIRCUITPY/settings.toml; rsync -av --exclude='._*' --exclude='__pycache__/' --include='*/' --include='*.py' --exclude='*' reporters/ /Volumes/CIRCUITPY/reporters/; cp code.py /Volumes/CIRCUITPY/code.py; sync"
       ],
       "options": {
         "cwd": "${workspaceFolder}"

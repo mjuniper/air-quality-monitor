@@ -14,31 +14,19 @@ from reporters.db import InfluxDbReporter
 # from reporters.notifier import NotificationReporter
 # import gc
 
-# TODO:
-#   - create different display modes that display different data
-#   - get the notification reporter working
-#     - make use of thresholds
-#   - review TODOs
-#   - use asyncio (or something) to make it respond to button presses by changing the display mode
-#   - refactor...
-#   - in an effort to make it resilient, i transiently write some errors to the screen
-#      and others i only ever print to the serial console... it would be nice to log errors somehow
-#      and print something persistently to the screen to indicate that i should check those logs
-#     - https://learn.adafruit.com/circuitpython-essentials/circuitpython-storage
-
 # TODO: we will probably want this to be something like 2 - 5 minutes
 # but in development we want a shorter interval to better understand if it is working
 # sampling_interval = 2 * 60 * 1000
-sampling_interval = 10 * 1000
+sampling_interval = 30 * 1000
 
 # check buttons at startup...
 # hold D1 to calibrate scd30 based on eCO2 reading from the ens160
-calibrate_ambient = digitalio.DigitalInOut(board.D1)
-calibrate_ambient.switch_to_input(pull=digitalio.Pull.DOWN)
+# calibrate_ambient = digitalio.DigitalInOut(board.D1)
+# calibrate_ambient.switch_to_input(pull=digitalio.Pull.DOWN)
 # hold D2 to calibrate scd30 based on a value of 425 which should approximate fresh outside air
-calibrate_outside = digitalio.DigitalInOut(board.D2)
-calibrate_outside.switch_to_input(pull=digitalio.Pull.DOWN)
-calibrate_scd = calibrate_ambient.value or calibrate_outside.value
+# calibrate_outside = digitalio.DigitalInOut(board.D2)
+# calibrate_outside.switch_to_input(pull=digitalio.Pull.DOWN)
+# calibrate_scd = calibrate_ambient.value or calibrate_outside.value
 # press button 0 to change display mode
 change_display_mode = digitalio.DigitalInOut(board.D0)
 change_display_mode.switch_to_input(pull=digitalio.Pull.UP)
