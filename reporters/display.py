@@ -38,7 +38,8 @@ class DisplayReporter:
     self.message_text_area.anchor_point = (0.5, 0.5)
     self.message_text_area.anchored_position = (board.DISPLAY.width // 2, board.DISPLAY.height // 2)
     self.message_text_area.color = green
-    board.DISPLAY.show(self.message_text_area)
+    # board.DISPLAY.show(self.message_text_area)
+    board.DISPLAY.root_group = self.message_text_area
 
     # groups for the various modes
     self.reporter_group_0 = displayio.Group()
@@ -198,7 +199,8 @@ class DisplayReporter:
     formatted_message = '\n'.join(lines)
 
     self.message_text_area.text = formatted_message
-    board.DISPLAY.show(self.message_text_area)
+    # board.DISPLAY.show(self.message_text_area)
+    board.DISPLAY.root_group = self.message_text_area
     print(formatted_message + '\n')
 
   def showMessage (self, msg):
@@ -232,7 +234,8 @@ class DisplayReporter:
     if display_mode >= len(self.reporter_groups):
       display_mode = 0
     self.display_mode = display_mode
-    board.DISPLAY.show(self.reporter_groups[self.display_mode])
+    # board.DISPLAY.show(self.reporter_groups[self.display_mode])
+    board.DISPLAY.root_group = self.message_text_area
 
   def report(self, data):
     try:
@@ -272,7 +275,8 @@ class DisplayReporter:
       hum_color = self.getColor(hum, self.thresholds["hum_caution"], self.thresholds["hum_danger"])
       self.setValues(self.hum_labels, "%.1f" % (hum), hum_color)
 
-      board.DISPLAY.show(self.reporter_groups[self.display_mode])
+      # board.DISPLAY.show(self.reporter_groups[self.display_mode])
+      board.DISPLAY.root_group = self.reporter_groups[self.display_mode]
 
     except Exception as e:
       print('DisplayReporter error: ' + str(e))

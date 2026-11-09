@@ -1,13 +1,13 @@
 import board
-import busio
+# import busio
 import digitalio
 import neopixel
 from adafruit_ticks import ticks_ms, ticks_add, ticks_diff
 import time
-import wifi
-from adafruit_pm25.i2c import PM25_I2C
-import adafruit_scd30
-import adafruit_ens160
+# import wifi
+# from adafruit_pm25.i2c import PM25_I2C
+# import adafruit_scd30
+# import adafruit_ens160
 from secrets import secrets
 from reporters.display import DisplayReporter
 from reporters.db import InfluxDbReporter
@@ -28,8 +28,8 @@ from reporters.db import InfluxDbReporter
 
 # TODO: we will probably want this to be something like 2 - 5 minutes
 # but in development we want a shorter interval to better understand if it is working
-sampling_interval = 2 * 60 * 1000
-# sampling_interval = 10 * 1000
+# sampling_interval = 2 * 60 * 1000
+sampling_interval = 10 * 1000
 
 # check buttons at startup...
 # hold D1 to calibrate scd30 based on eCO2 reading from the ens160
@@ -47,7 +47,7 @@ change_display_mode.switch_to_input(pull=digitalio.Pull.UP)
 # setup neopixel
 # #####
 pixel = neopixel.NeoPixel(board.NEOPIXEL, 1)
-pixel.brightness = .2
+pixel.brightness = .1
 
 # #####
 # setup reporters
@@ -62,9 +62,9 @@ reporters.append(InfluxDbReporter(secrets))
 def report(data):
   # TODO: reconsider how/where we validate data
   # if data["co2"] != None and data["co2"] > 400 and data["aqi"] != None and data["aqi"] > 0 and data["eco2"] != None and data["eco2"] > 0:
-  if data["co2"] != None and data["aqi"] != None and data["eco2"] != None:
-    for reporter in reporters:
-      reporter.report(data)
+  # if data["co2"] != None and data["aqi"] != None and data["eco2"] != None:
+  for reporter in reporters:
+    reporter.report(data)
   # else:
   #   props = ("co2", "eco2", "aqi")
 
@@ -77,15 +77,15 @@ def report(data):
 # #####
 # connect to the network
 # #####
-display_reporter.showMessage("Connecting to %s" % secrets["wifi"]["ssid"])
-try:
-  wifi.radio.connect(secrets["wifi"]["ssid"], secrets["wifi"]["password"])
-except Exception as e:
-  display_reporter.showMessage("Error connecting to network: " + str(e))
+# display_reporter.showMessage("Connecting to %s" % secrets["wifi"]["ssid"])
+# try:
+#   wifi.radio.connect(secrets["wifi"]["ssid"], secrets["wifi"]["password"])
+# except Exception as e:
+#   display_reporter.showMessage("Error connecting to network: " + str(e))
 
-display_reporter.showMessage("Connected to %s!" % secrets["wifi"]["ssid"])
+# display_reporter.showMessage("Connected to %s!" % secrets["wifi"]["ssid"])
 
-time.sleep(2)
+# time.sleep(2)
 
 # #####
 # setup to read sensors
@@ -96,57 +96,57 @@ time.sleep(2)
 # stemma_i2c = board.STEMMA_I2C()
 # one of the others suggests even slower
 # TODO: what does frequency even mean in this context?
-stemma_i2c = busio.I2C(board.SCL, board.SDA, frequency=50000)
+# stemma_i2c = busio.I2C(board.SCL, board.SDA, frequency=50000)
 
 # Connect to a PM2.5 sensor over I2C
-pm25 = PM25_I2C(stemma_i2c)
+# pm25 = PM25_I2C(stemma_i2c)
 # read with pm25.read()
 # see https://learn.adafruit.com/pmsa003i/python-circuitpython
 
 # connect to voc sensor over I2C
-ens = adafruit_ens160.ENS160(stemma_i2c)
+# ens = adafruit_ens160.ENS160(stemma_i2c)
 # see https://learn.adafruit.com/adafruit-ens160-mox-gas-sensor/circuitpython-python
 
 # connect to scd30 over I2C
-scd = adafruit_scd30.SCD30(stemma_i2c)
+# scd = adafruit_scd30.SCD30(stemma_i2c)
 # setup scd30 params
 
-def initScd30():
-  # we check the values before setting because the non-volatile memory that stores this stuff may have a limited number of writes
-  if scd.self_calibration_enabled != False:
-    scd.self_calibration_enabled = False
-  if scd.measurement_interval != sampling_interval // 1000:
-    scd.measurement_interval = sampling_interval // 1000
-  if scd.altitude != 1538:
-    scd.altitude = 1538
-  # it might be even better to set scd.ambient_pressure but i don't have a pressure sensor hooked up...
-  if scd.ambient_pressure != 0:
-    scd.ambient_pressure = 0
+# def initScd30():
+#   # we check the values before setting because the non-volatile memory that stores this stuff may have a limited number of writes
+#   if scd.self_calibration_enabled != False:
+#     scd.self_calibration_enabled = False
+#   if scd.measurement_interval != sampling_interval // 1000:
+#     scd.measurement_interval = sampling_interval // 1000
+#   if scd.altitude != 1538:
+#     scd.altitude = 1538
+#   # it might be even better to set scd.ambient_pressure but i don't have a pressure sensor hooked up...
+#   if scd.ambient_pressure != 0:
+#     scd.ambient_pressure = 0
 
-initScd30()
+# initScd30()
 
-if calibrate_scd:
-  # https://www.sensirion.com/media/documents/33C09C07/620638B8/Sensirion_SCD30_Field_Calibration.pdf
-  scd.reset()
-  initScd30()
-  display_reporter.showMessage('Waiting to calibrate scd30...')
-  time.sleep(3 * 60)
-  # use the scd30 to calibrate the ens160
-  # first we will actually use the scd 130 temp and humidity to calibrate the ens160
-  # we do this below every time we read the sensors but we want to do it here before we calibrate the scd30
-  if calibrate_ambient:
-    if scd.temperature != None:
-      ens.temperature_compensation = scd.temperature
-    if scd.relative_humidity != None:
-      ens.humidity_compensation = scd.relative_humidity
-    # then use the ens160 to calibrate the scd30
-    scd.forced_recalibration_reference = ens.eCO2
-  else:
-    # or we could just expose it to fresh air and use 425
-    scd.forced_recalibration_reference = 425
+# if calibrate_scd:
+#   # https://www.sensirion.com/media/documents/33C09C07/620638B8/Sensirion_SCD30_Field_Calibration.pdf
+#   scd.reset()
+#   initScd30()
+#   display_reporter.showMessage('Waiting to calibrate scd30...')
+#   time.sleep(3 * 60)
+#   # use the scd30 to calibrate the ens160
+#   # first we will actually use the scd 130 temp and humidity to calibrate the ens160
+#   # we do this below every time we read the sensors but we want to do it here before we calibrate the scd30
+#   if calibrate_ambient:
+#     if scd.temperature != None:
+#       ens.temperature_compensation = scd.temperature
+#     if scd.relative_humidity != None:
+#       ens.humidity_compensation = scd.relative_humidity
+#     # then use the ens160 to calibrate the scd30
+#     scd.forced_recalibration_reference = ens.eCO2
+#   else:
+#     # or we could just expose it to fresh air and use 425
+#     scd.forced_recalibration_reference = 425
   
-  display_reporter.showMessage('Calibrated scd30!')
-  time.sleep(2)
+#   display_reporter.showMessage('Calibrated scd30!')
+#   time.sleep(2)
 
 # TODO: do i need to worry about data_available?
 # TODO: do i need to ignore the first co2 reading?
@@ -188,13 +188,13 @@ while True:
     # #####
     # TODO: we want to not bring the whole thing down when there is an error
     # this works for now but we can do better...
-    try:
-      if scd.temperature != None:
-        ens.temperature_compensation = scd.temperature
-      if scd.relative_humidity != None:
-        ens.humidity_compensation = scd.relative_humidity
-    except Exception as e:
-      display_reporter.showError('Error calibrating ens160: ' + str(e))
+    # try:
+    #   if scd.temperature != None:
+    #     ens.temperature_compensation = scd.temperature
+    #   if scd.relative_humidity != None:
+    #     ens.humidity_compensation = scd.relative_humidity
+    # except Exception as e:
+    #   display_reporter.showError('Error calibrating ens160: ' + str(e))
 
     # #####
     # read the sensors
@@ -203,35 +203,37 @@ while True:
     # this works for now but we can do better...
     # if only one sensor fails, we should read and report the others
     # it would also be good to know how long it has been failing
-    try:
-      pm25_data = pm25.read()
-      data = {
-        # "data_available": scd.data_available,
-        "co2": scd.CO2, # CO2 concentration in PPM
-        "temp": scd.temperature, # current temperature in degrees C
-        "hum": scd.relative_humidity, # relative humidity in %rH
-        "aqi": ens.AQI, # air quality index: 1 - 5
-        "voc": ens.TVOC, # ppb
-        "pm25": pm25_data["pm25 env"],
-        "eco2": ens.eCO2,
-        # the above are the main ones we are interested in
-        # but we'll keep these too:
-        "pm10": pm25_data["pm10 env"],
-        "pm100": pm25_data["pm100 env"],
-        "particles_03um": pm25_data["particles 03um"],
-        "particles_05um": pm25_data["particles 05um"],
-        "particles_10um": pm25_data["particles 10um"],
-        "particles_25um": pm25_data["particles 25um"],
-        "particles_50um": pm25_data["particles 50um"],
-        "particles_100um": pm25_data["particles 100um"]
-      }
-    except Exception as e:
-      display_reporter.showError('Error reading sensors: ' + str(e))
+    # try:
+    #   pm25_data = pm25.read()
+    #   data = {
+    #     # "data_available": scd.data_available,
+    #     "co2": scd.CO2, # CO2 concentration in PPM
+    #     "temp": scd.temperature, # current temperature in degrees C
+    #     "hum": scd.relative_humidity, # relative humidity in %rH
+    #     "aqi": ens.AQI, # air quality index: 1 - 5
+    #     "voc": ens.TVOC, # ppb
+    #     "pm25": pm25_data["pm25 env"],
+    #     "eco2": ens.eCO2,
+    #     # the above are the main ones we are interested in
+    #     # but we'll keep these too:
+    #     "pm10": pm25_data["pm10 env"],
+    #     "pm100": pm25_data["pm100 env"],
+    #     "particles_03um": pm25_data["particles 03um"],
+    #     "particles_05um": pm25_data["particles 05um"],
+    #     "particles_10um": pm25_data["particles 10um"],
+    #     "particles_25um": pm25_data["particles 25um"],
+    #     "particles_50um": pm25_data["particles 50um"],
+    #     "particles_100um": pm25_data["particles 100um"]
+    #   }
+    # except Exception as e:
+    #   display_reporter.showError('Error reading sensors: ' + str(e))
 
     # #####
     # send data to appropriate places (influxdb, the screen, a log file, an alert to my phone)
-    report(data)
+    # report(data)
     # #####
+
+    display_reporter.showMessage('Looping...' + str(sensor_clock))
 
     pixel.fill((0, 0, 0))
 

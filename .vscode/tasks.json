@@ -1,0 +1,53 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "deploy",
+      "type": "process",
+      "command": "/bin/bash",
+      "args": [
+        "-c",
+        "set -euo pipefail; if [ ! -d /Volumes/CIRCUITPY ] || [ ! -f /Volumes/CIRCUITPY/boot_out.txt ]; then printf '%s\\n' 'CIRCUITPY is not mounted. Connect the board in CircuitPython mode.' >&2; exit 1; fi; rsync -av --exclude='._*' --exclude='__pycache__/' --include='*/' --include='*.py' --exclude='*' reporters/ /Volumes/CIRCUITPY/reporters/; cp code.py /Volumes/CIRCUITPY/code.py; sync"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "add_deps",
+      "type": "process",
+      "command": "/bin/bash",
+      "args": [
+        "-c",
+        "set -euo pipefail; if [ ! -d /Volumes/CIRCUITPY ] || [ ! -f /Volumes/CIRCUITPY/boot_out.txt ]; then printf '%s\\n' 'CIRCUITPY is not mounted. Connect the board in CircuitPython mode.' >&2; exit 1; fi; for source in ./code.py ./reporters/*.py; do circup --path /Volumes/CIRCUITPY install --auto --auto-file \"$source\"; done; circup --path /Volumes/CIRCUITPY freeze -r"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PATH": "${env:HOME}/.local/bin:${env:PATH}"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "install_deps",
+      "type": "process",
+      "command": "circup",
+      "args": [
+        "--path",
+        "/Volumes/CIRCUITPY",
+        "install",
+        "-r",
+        "requirements.txt"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PATH": "${env:HOME}/.local/bin:${env:PATH}"
+        }
+      },
+      "problemMatcher": []
+    }
+  ]
+}

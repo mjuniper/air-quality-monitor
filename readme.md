@@ -1,3 +1,49 @@
+TODO:
+	- handle reconnecting to the network
+	- update to keep secrets in settings.toml
+	- wire in the new sensor
+	- ask gemini for other ways to improve the code (and make it more pythonic)
+	- update this file...
+		- as built
+	- push all changes upstream
+
+## Development workflow
+
+Edit application code in this repository and connect the board over USB so it
+mounts as `/Volumes/CIRCUITPY` (not `FTHRS3BOOT`). Install Circup on your Mac with
+`pipx install circup` and make sure `circup` is available in the VS Code terminal.
+The dependency tasks add pipx's default executable directory (`~/.local/bin`) to
+their PATH, so they also work when VS Code was launched without that directory
+in its environment. For interactive terminals, run `pipx ensurepath` and restart
+the terminal if `circup` is not found.
+
+Use **Terminal > Run Task** to run the tasks in [.vscode/tasks.json](.vscode/tasks.json):
+
+- **add_deps**: Scan local `code.py` and all Python files directly in `reporters/`,
+  install their recognized bundle libraries and dependencies on the board, then
+  save the board's library inventory to local `requirements.txt`. This includes
+  optional reporters, but excludes development snippets. Review and commit the
+  generated dependency list. It inventories all installed libraries, including
+  any unrelated ones; it does not remove unused libraries.
+- **install_deps**: Install libraries from the committed `requirements.txt` onto
+  the board. Use this when setting up a fresh board.
+- **deploy**: Copy Python files in `reporters/` first, then `code.py`, and flush
+  pending writes. This does not copy `lib/`, snippets, Git/editor files, or
+  credentials, and does not delete existing board files. CircuitPython may reload
+  while files are copied; check the serial console after deployment.
+
+For initial setup, run `add_deps`, restore the board's private configuration, then
+`deploy`. Keep `secrets.py` (while the application still uses it) and `settings.toml`
+on the board; they are excluded from Git and routine deployment. Back them up
+separately before firmware or bootloader upgrades.
+
+For library updates, run `circup --path /Volumes/CIRCUITPY update --all`, test the
+application, then run `circup --path /Volumes/CIRCUITPY freeze -r` and review the
+updated dependency list. Circup selects compiled libraries for the board's
+CircuitPython version; the repository's existing `lib/` is not deployed.
+
+
+
 https://circuitpython.org/board/adafruit_feather_esp32s3_reverse_tft/
 
 https://learn.adafruit.com/adafruit-ens160-mox-gas-sensor/circuitpython-python

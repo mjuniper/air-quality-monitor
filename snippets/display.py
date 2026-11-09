@@ -30,4 +30,5 @@ group.append(text_area)
 group.append(text_area_2)
 group.append(text_area_3)
 
-board.DISPLAY.show(group)
+# board.DISPLAY.show(group)
+board.DISPLAY.root_group = group
