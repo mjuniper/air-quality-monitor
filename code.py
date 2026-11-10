@@ -8,6 +8,7 @@ import time
 # from adafruit_pm25.i2c import PM25_I2C
 # import adafruit_scd30
 # import adafruit_ens160
+import adafruit_sen6x
 from secrets import secrets
 from reporters.display import DisplayReporter
 from reporters.db import InfluxDbReporter
@@ -81,7 +82,16 @@ def report(data):
 # the pm25 sensor docs suggest using 100khz frequency...
 # stemma_i2c = board.STEMMA_I2C(frequency=100000)
 # but that seems to be the default
-# stemma_i2c = board.STEMMA_I2C()
+stemma_i2c = board.STEMMA_I2C()
+
+sensor = adafruit_sen6x.SEN66(stemma_i2c)
+print("Sensor initialized")
+sensor.sensor_altitude = 1525
+print("Sensor altitude set to", sensor.sensor_altitude)
+sensor.start_measurement()
+print("Measurement started")
+
+
 # one of the others suggests even slower
 # TODO: what does frequency even mean in this context?
 # stemma_i2c = busio.I2C(board.SCL, board.SDA, frequency=50000)
@@ -149,7 +159,8 @@ def report(data):
 #   }
 # msg = '\n'.join(f'{k}={v}' for k,v in scd_params.items())
 # display_reporter.showMessage(msg)
-# time.sleep(5)
+
+time.sleep(5)
 
 # #####
 # loop!
@@ -191,7 +202,29 @@ while True:
     # this works for now but we can do better...
     # if only one sensor fails, we should read and report the others
     # it would also be good to know how long it has been failing
-    # try:
+    try:
+      if sensor.data_ready:
+        # Check for errors before reading
+        sensor.check_sensor_errors()
+
+        # Read all measurements
+        data = sensor.all_measurements()
+
+        display_reporter.showMessage('Sensor data: ' + str(data))
+        print("Sensor data: ", data)
+
+        # {
+        #   'co2': 899.0, 
+        #   'nox_index': 1.0, 
+        #   'voc_index': 19.0,
+        #   'pm1_0': 0.1,
+        #   'pm2_5': 0.1,
+        #   'pm4_0': 0.2, 
+        #   'pm10': 0.2,
+        #   'temperature': 23.29, 
+        #   'humidity': 38.94,
+        # }
+
     #   pm25_data = pm25.read()
     #   data = {
     #     # "data_available": scd.data_available,
@@ -213,15 +246,15 @@ while True:
     #     "particles_50um": pm25_data["particles 50um"],
     #     "particles_100um": pm25_data["particles 100um"]
     #   }
-    # except Exception as e:
-    #   display_reporter.showError('Error reading sensors: ' + str(e))
+    except Exception as e:
+      display_reporter.showError('Error reading sensors: ' + str(e))
 
     # #####
     # send data to appropriate places (influxdb, the screen, a log file, an alert to my phone)
     # report(data)
     # #####
 
-    display_reporter.showMessage('Looping...' + str(sensor_clock))
+    # display_reporter.showMessage('Looping...' + str(sensor_clock))
 
     pixel.fill((0, 0, 0))
 
