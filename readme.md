@@ -1,5 +1,8 @@
 TODO:
 	- wire in the new sensor
+		- update the grafana dashboard
+		- update thresholds for nox and voc
+	- refactor display reporter as discussed with copilot
 	- get the notification reporter working
 	- see TODOS in code files
 	- update to keep secrets in settings.toml

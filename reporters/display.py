@@ -14,12 +14,11 @@ from adafruit_display_text import bitmap_label, wrap_text_to_pixels
 # https://www.rapidtables.com/web/color/orange-color.html
 # https://www.rapidtables.com/web/color/red-color.html
 
-# Display modes:
+# New display modes:
 #   0. voc, pm25, co2
 #   1. temp, hum
-#   2. co2, eco2
-#   3. pm25, pm10, pm100
-#   4. voc, aqi
+#   2. voc, nox
+#   3. pm1, pm4, pm10
 #   5. error log
 
 green = 0x00FA9A #0x00FFFF 0x228B22
@@ -46,19 +45,18 @@ class DisplayReporter:
     self.reporter_group_1 = displayio.Group()
     self.reporter_group_2 = displayio.Group()
     self.reporter_group_3 = displayio.Group()
-    self.reporter_group_4 = displayio.Group()
-    self.reporter_groups = (self.reporter_group_0, self.reporter_group_1, self.reporter_group_2, self.reporter_group_3, self.reporter_group_4)
+    self.reporter_groups = (self.reporter_group_0, self.reporter_group_1, self.reporter_group_2, self.reporter_group_3)
 
     # tuples to hold labels for various data
     self.co2_labels = []
     self.voc_labels = []
-    self.aqi_labels = []
+    self.nox_labels = []
+    self.pm1_labels = []
     self.pm25_labels = []
     self.pm10_labels = []
-    self.pm100_labels = []
+    self.pm4_labels = []
     self.temp_labels = []
     self.hum_labels = []
-    self.eco2_labels = []
 
     padding = 36
 
@@ -117,60 +115,6 @@ class DisplayReporter:
     self.reporter_group_1.append(hum_label)
 
     # reporter_group_2
-    co2_value_2 = bitmap_label.Label(terminalio.FONT, text="000", scale=3)
-    co2_value_2.anchor_point = (0.5, 0)
-    co2_value_2.anchored_position = (60, padding)
-    co2_label_2 = bitmap_label.Label(terminalio.FONT, text="CO2", scale=2)
-    co2_label_2.anchor_point = (0.5, 1)
-    co2_label_2.anchored_position = (60, board.DISPLAY.height - padding)
-    self.co2_labels.append((co2_label_2, co2_value_2))
-
-    eco2_value = bitmap_label.Label(terminalio.FONT, text="000", scale=3, padding_top=padding)
-    eco2_value.anchor_point = (0.5, 0)
-    eco2_value.anchored_position = (180, padding)
-    eco2_label = bitmap_label.Label(terminalio.FONT, text="eCO2", scale=2, padding_bottom=padding)
-    eco2_label.anchor_point = (0.5, 1)
-    eco2_label.anchored_position = (180, board.DISPLAY.height - padding)
-    self.eco2_labels.append((eco2_label, eco2_value))
-    
-    self.reporter_group_2.append(co2_value_2)
-    self.reporter_group_2.append(co2_label_2)
-    self.reporter_group_2.append(eco2_value)
-    self.reporter_group_2.append(eco2_label)
-
-    # reporter_group_3
-    pm2_value_2 = bitmap_label.Label(terminalio.FONT, text="000", scale=3)
-    pm2_value_2.anchor_point = (0.5, 0)
-    pm2_value_2.anchored_position = (40, padding)
-    pm2_label_2 = bitmap_label.Label(terminalio.FONT, text="PM 2.5", scale=2)
-    pm2_label_2.anchor_point = (0.5, 1)
-    pm2_label_2.anchored_position = (40, board.DISPLAY.height - padding)
-    self.pm25_labels.append((pm2_label_2, pm2_value_2))
-
-    pm10_value = bitmap_label.Label(terminalio.FONT, text="000", scale=3)
-    pm10_value.anchor_point = (0.5, 0)
-    pm10_value.anchored_position = (board.DISPLAY.width // 2, padding)
-    pm10_label = bitmap_label.Label(terminalio.FONT, text="PM 10", scale=2, padding_bottom=padding)
-    pm10_label.anchor_point = (0.5, 1)
-    pm10_label.anchored_position = (board.DISPLAY.width // 2, board.DISPLAY.height - padding)
-    self.pm10_labels.append((pm10_label, pm10_value))
-
-    pm100_value = bitmap_label.Label(terminalio.FONT, text="000", scale=3, padding_top=padding)
-    pm100_value.anchor_point = (0.5, 0)
-    pm100_value.anchored_position = (200, padding)
-    pm100_label = bitmap_label.Label(terminalio.FONT, text="PM 100", scale=2, padding_bottom=padding)
-    pm100_label.anchor_point = (0.5, 1)
-    pm100_label.anchored_position = (200, board.DISPLAY.height - padding)
-    self.pm100_labels.append((pm100_label, pm100_value))
-    
-    self.reporter_group_3.append(pm2_value_2)
-    self.reporter_group_3.append(pm2_label_2)
-    self.reporter_group_3.append(pm10_value)
-    self.reporter_group_3.append(pm10_label)
-    self.reporter_group_3.append(pm100_value)
-    self.reporter_group_3.append(pm100_label)
-
-    # reporter_group_4
     voc_value_2 = bitmap_label.Label(terminalio.FONT, text="000", scale=3)
     voc_value_2.anchor_point = (0.5, 0)
     voc_value_2.anchored_position = (60, padding)
@@ -179,18 +123,72 @@ class DisplayReporter:
     voc_label_2.anchored_position = (60, board.DISPLAY.height - padding)
     self.voc_labels.append((voc_label_2, voc_value_2))
 
-    aqi_value = bitmap_label.Label(terminalio.FONT, text="000", scale=3, padding_top=padding)
-    aqi_value.anchor_point = (0.5, 0)
-    aqi_value.anchored_position = (180, padding)
-    aqi_label = bitmap_label.Label(terminalio.FONT, text="AQI", scale=2, padding_bottom=padding)
-    aqi_label.anchor_point = (0.5, 1)
-    aqi_label.anchored_position = (180, board.DISPLAY.height - padding)
-    self.aqi_labels.append((aqi_label, aqi_value))
+    nox_value = bitmap_label.Label(terminalio.FONT, text="000", scale=3, padding_top=padding)
+    nox_value.anchor_point = (0.5, 0)
+    nox_value.anchored_position = (180, padding)
+    nox_label = bitmap_label.Label(terminalio.FONT, text="NOX", scale=2, padding_bottom=padding)
+    nox_label.anchor_point = (0.5, 1)
+    nox_label.anchored_position = (180, board.DISPLAY.height - padding)
+    self.nox_labels.append((nox_label, nox_value))
     
-    self.reporter_group_4.append(voc_value_2)
-    self.reporter_group_4.append(voc_label_2)
-    self.reporter_group_4.append(aqi_value)
-    self.reporter_group_4.append(aqi_label)
+    self.reporter_group_2.append(voc_value_2)
+    self.reporter_group_2.append(voc_label_2)
+    self.reporter_group_2.append(nox_value)
+    self.reporter_group_2.append(nox_label)
+
+    # reporter_group_3
+    pm1_value = bitmap_label.Label(terminalio.FONT, text="000", scale=3)
+    pm1_value.anchor_point = (0.5, 0)
+    pm1_value.anchored_position = (40, padding)
+    pm1_label = bitmap_label.Label(terminalio.FONT, text="PM 1", scale=2)
+    pm1_label.anchor_point = (0.5, 1)
+    pm1_label.anchored_position = (40, board.DISPLAY.height - padding)
+    self.pm1_labels.append((pm1_label, pm1_value))
+    
+    pm4_value = bitmap_label.Label(terminalio.FONT, text="000", scale=3, padding_top=padding)
+    pm4_value.anchor_point = (0.5, 0)
+    pm4_value.anchored_position = (200, padding)
+    pm4_label = bitmap_label.Label(terminalio.FONT, text="PM 4", scale=2, padding_bottom=padding)
+    pm4_label.anchor_point = (0.5, 1)
+    pm4_label.anchored_position = (200, board.DISPLAY.height - padding)
+    self.pm4_labels.append((pm4_label, pm4_value))
+
+    pm10_value = bitmap_label.Label(terminalio.FONT, text="000", scale=3)
+    pm10_value.anchor_point = (0.5, 0)
+    pm10_value.anchored_position = (board.DISPLAY.width // 2, padding)
+    pm10_label = bitmap_label.Label(terminalio.FONT, text="PM 10", scale=2, padding_bottom=padding)
+    pm10_label.anchor_point = (0.5, 1)
+    pm10_label.anchored_position = (board.DISPLAY.width // 2, board.DISPLAY.height - padding)
+    self.pm10_labels.append((pm10_label, pm10_value))
+    
+    self.reporter_group_3.append(pm1_value)
+    self.reporter_group_3.append(pm1_label)
+    self.reporter_group_3.append(pm4_value)
+    self.reporter_group_3.append(pm4_label)
+    self.reporter_group_3.append(pm10_value)
+    self.reporter_group_3.append(pm10_label)
+
+    # reporter_group_4
+    # voc_value_2 = bitmap_label.Label(terminalio.FONT, text="000", scale=3)
+    # voc_value_2.anchor_point = (0.5, 0)
+    # voc_value_2.anchored_position = (60, padding)
+    # voc_label_2 = bitmap_label.Label(terminalio.FONT, text="VOC", scale=2)
+    # voc_label_2.anchor_point = (0.5, 1)
+    # voc_label_2.anchored_position = (60, board.DISPLAY.height - padding)
+    # self.voc_labels.append((voc_label_2, voc_value_2))
+
+    # aqi_value = bitmap_label.Label(terminalio.FONT, text="000", scale=3, padding_top=padding)
+    # aqi_value.anchor_point = (0.5, 0)
+    # aqi_value.anchored_position = (180, padding)
+    # aqi_label = bitmap_label.Label(terminalio.FONT, text="AQI", scale=2, padding_bottom=padding)
+    # aqi_label.anchor_point = (0.5, 1)
+    # aqi_label.anchored_position = (180, board.DISPLAY.height - padding)
+    # self.aqi_labels.append((aqi_label, aqi_value))
+    
+    # self.reporter_group_4.append(voc_value_2)
+    # self.reporter_group_4.append(voc_label_2)
+    # self.reporter_group_4.append(aqi_value)
+    # self.reporter_group_4.append(aqi_label)
 
   def _showMessage (self, msg, color):
     self.message_text_area.color = color
@@ -235,33 +233,33 @@ class DisplayReporter:
       display_mode = 0
     self.display_mode = display_mode
     # board.DISPLAY.show(self.reporter_groups[self.display_mode])
-    board.DISPLAY.root_group = self.message_text_area
+    board.DISPLAY.root_group = self.reporter_groups[self.display_mode]
 
   def report(self, data):
     try:
+      pm1 = data["pm1"]
+      pm1_color = self.getColor(pm1, self.thresholds["pm1_caution"], self.thresholds["pm1_danger"])
+      self.setValues(self.pm1_labels, pm1, pm1_color)
+
       pm25 = data["pm25"]
       pm2_color = self.getColor(pm25, self.thresholds["pm25_caution"], self.thresholds["pm25_danger"])
       self.setValues(self.pm25_labels, pm25, pm2_color)
+
+      pm4 = data["pm4"]
+      pm4_color = self.getColor(pm4, self.thresholds["pm4_caution"], self.thresholds["pm4_danger"])
+      self.setValues(self.pm4_labels, pm4, pm4_color)
 
       pm10 = data["pm10"]
       pm10_color = self.getColor(pm10, self.thresholds["pm10_caution"], self.thresholds["pm10_danger"])
       self.setValues(self.pm10_labels, pm10, pm10_color)
 
-      pm100 = data["pm100"]
-      pm100_color = self.getColor(pm100, self.thresholds["pm100_caution"], self.thresholds["pm100_danger"])
-      self.setValues(self.pm100_labels, pm100, pm100_color)
-
       voc = data["voc"]
       voc_color = self.getColor(voc, self.thresholds["voc_caution"], self.thresholds["voc_danger"])
       self.setValues(self.voc_labels, voc, voc_color)
 
-      aqi = data["aqi"]
-      aqi_color = self.getColor(aqi, self.thresholds["aqi_caution"], self.thresholds["aqi_danger"])
-      self.setValues(self.aqi_labels, aqi, aqi_color)
-
-      eco2 = data["eco2"]
-      eco2_color = self.getColor(eco2, self.thresholds["co2_caution"], self.thresholds["co2_danger"])
-      self.setValues(self.eco2_labels, "%.0f" % (eco2), eco2_color)
+      nox = data["nox"]
+      nox_color = self.getColor(nox, self.thresholds["nox_caution"], self.thresholds["nox_danger"])
+      self.setValues(self.nox_labels, nox, nox_color)
 
       co2 = data["co2"]
       co2_color = self.getColor(co2, self.thresholds["co2_caution"], self.thresholds["co2_danger"])
