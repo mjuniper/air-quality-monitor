@@ -5,16 +5,17 @@ from adafruit_ticks import ticks_ms, ticks_add, ticks_diff
 import time
 # import wifi
 import adafruit_sen6x
-from secrets import secrets
+from thresholds import thresholds
 from reporters.display import DisplayReporter
 from reporters.db import InfluxDbReporter
+from reporters.flaky import FlakyReporter
 # from reporters.notifier import NotificationReporter
 # import gc
 
 # TODO: we will probably want this to be something like 2 - 5 minutes
 # but in development we want a shorter interval to better understand if it is working
 sampling_interval = 2 * 60 * 1000
-# sampling_interval = 30 * 1000
+# sampling_interval = 15 * 1000
 
 # check buttons at startup...
 # hold D1 to calibrate scd30 based on eCO2 reading from the ens160
@@ -39,25 +40,19 @@ pixel.brightness = .1
 # #####
 reporters = []
 # TODO: i could factor this into a reporter_manager class
-display_reporter = DisplayReporter(secrets)
+display_reporter = DisplayReporter(thresholds)
 reporters.append(display_reporter)
-reporters.append(InfluxDbReporter(secrets))
-# reporters.append(NotificationReporter(secrets))
+reporters.append(InfluxDbReporter())
+# reporters.append(NotificationReporter(thresholds))
+# reporters.append(FlakyReporter())
 
 def report(data):
-  # TODO: reconsider how/where we validate data
-  # if data["co2"] != None and data["co2"] > 400 and data["aqi"] != None and data["aqi"] > 0 and data["eco2"] != None and data["eco2"] > 0:
-  # if data["co2"] != None and data["aqi"] != None and data["eco2"] != None:
   for reporter in reporters:
-    reporter.report(data)
-  # else:
-  #   props = ("co2", "eco2", "aqi")
-
-  #   def isInList (prop):
-  #     return props.count(prop[0]) > 0
-
-  #   msg = ', '.join(f'{k}={v}' for k,v in filter(isInList, data.items()))
-  #   display_reporter.showError("Skipping reporting data because it seems bogus." + msg)
+    try:
+      reporter.report(data)
+      display_reporter.clearError(reporter.name)
+    except Exception as e:
+      display_reporter.logError(reporter.name, e)
 
 # #####
 # setup to read sensors
@@ -90,25 +85,16 @@ while True:
     pixel.fill((0, 255, 0))
 
     # #####
-    # check the network?
-    # todo: if we don't have network, print that info to screen and make sure it stays there...
-    # #####
-
-    # #####
     # read the sensors
     # #####
     # TODO: we want to not bring the whole thing down when there is an error
     # this works for now but we can do better...
-    # if only one sensor fails, we should read and report the others
     # it would also be good to know how long it has been failing
+    data = None
     try:
       if sensor.data_ready:
-        # Check for errors before reading
         sensor.check_sensor_errors()
-
-        # Read all measurements
         sensor_data = sensor.all_measurements()
-
         data = {
           "co2": sensor_data["co2"], # CO2 concentration in PPM
           "temp": sensor_data["temperature"], # current temperature in degrees C
@@ -120,18 +106,14 @@ while True:
           "pm4": sensor_data["pm4_0"], 
           "pm10": sensor_data["pm10"],
         }
-
-        # #####
-        # send data to appropriate places (influxdb, the screen, a log file, an alert to my phone)
-        report(data)
-        # #####
-
+        display_reporter.clearError("sensor")
     except Exception as e:
-      display_reporter.showError('Error reading sensors: ' + str(e))
+      display_reporter.logError("sensor", e)
 
-    # display_reporter.showMessage('Looping...' + str(sensor_clock))
+    if data is not None:
+      report(data)
 
-    pixel.fill((0, 0, 0))
+    pixel.fill((255, 0, 0) if display_reporter.has_errors else (0, 0, 0))
 
     # i think i have a memory leak... or maybe that is just the way python works???
     # free memory continuously falls with every iteration of the loop until it gets down to a few k

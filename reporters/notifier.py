@@ -1,4 +1,4 @@
-#import http.client, urllib
+import os
 import time
 import wifi
 import ssl
@@ -9,10 +9,10 @@ class NotificationReporter:
 
   lastNotification = 0
 
-  def __init__(self, params):
-    self.threshold = params['threshold']
-    self.token = params['pushovertoken']
-    self.user = params['pushoveruser']
+  def __init__(self, thresholds):
+    self.threshold = thresholds
+    self.user = os.getenv("pushover_user")
+    self.token = os.getenv("pushover_token")
     
     pool = socketpool.SocketPool(wifi.radio)
     self.session = adafruit_requests.Session(pool, ssl.create_default_context())

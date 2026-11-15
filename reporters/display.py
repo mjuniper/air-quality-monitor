@@ -1,52 +1,32 @@
 # reporters/display.py
 #
-# Shows air quality readings on the ESP32-S3's built-in TFT.
+# Shows air quality readings on the ESP32-S3's built-in TFT, plus a persistent
+# error indicator and an error log page.
 #
-# How the screen is organized:
+# Screen structure:
 #
-#   PageLayout (root of the display)
-#   ├── page "mode0": GridLayout  -> voc, pm25, co2
-#   ├── page "mode1": GridLayout  -> temp, hum
-#   ├── page "mode2": GridLayout  -> voc, nox
-#   ├── page "mode3": GridLayout  -> pm1, pm4, pm10
-#   └── page "message": one centered Label, used for status and error text
-#
-# PageLayout shows exactly one page at a time, so switching display modes is
-# just "show a different page". Each page's GridLayout has one column per
-# metric and two rows: the big number on top and the name underneath.
-#
-# Docs:
-#   https://learn.adafruit.com/circuitpython-display-support-using-displayio/introduction
-#   https://learn.adafruit.com/circuitpython-display_text-library/overview
-#   https://docs.circuitpython.org/projects/displayio_layout/en/latest/
+#   root Group
+#   ├── PageLayout
+#   │   ├── page "mode0".."modeN": GridLayout of metrics   <- button cycles these
+#   │   ├── page "log": list of reporter/sensor errors      <- ...and this one
+#   │   └── page "message": big centered text, boot status  <- NOT in the cycle
+#   └── indicator: a red "!" in the top-right corner, drawn above every page,
+#                  visible only while at least one error is active
 
+import time
 import board
 import terminalio
+import displayio
 from adafruit_display_text import bitmap_label, wrap_text_to_pixels
 from adafruit_displayio_layout.layouts.grid_layout import GridLayout
 from adafruit_displayio_layout.layouts.page_layout import PageLayout
 
-# Status colors as 24-bit RGB hex values (0xRRGGBB).
-GREEN = 0x00FA9A   # reading is fine
-YELLOW = 0xFFA500  # caution range
-RED = 0xFF0000     # danger range (also used for error messages)
+GREEN = 0x00FA9A
+YELLOW = 0xFFA500
+RED = 0xFF0000
 
-# ---------------------------------------------------------------------------
-# METRICS: everything that differs from one measurement to the next lives here.
-#
-# The key (e.g. "pm25") has to match two other things:
-#   1. the key in the `data` dict that code.py passes to report()
-#   2. the prefix of the threshold names in secrets['thresholds'],
-#      i.e. "pm25_caution" and "pm25_danger"
-#
-# Per-metric options:
-#   "label"   : the name shown under the number (required)
-#   "fmt"     : a printf-style format for the number. Defaults to "%s", which
-#               just uses str(value). Use "%.0f" or "%.1f" to control decimals.
-#   "convert" : optional function applied to the raw value BEFORE coloring and
-#               display. Thresholds are compared against the converted value,
-#               so the temp thresholds in secrets must be in Fahrenheit.
-# ---------------------------------------------------------------------------
+# Same metric/page tables as before. See the earlier version for details on
+# each option ("label", "fmt", "convert").
 METRICS = {
   "pm1":  {"label": "PM 1"},
   "pm25": {"label": "PM 2.5"},
@@ -59,159 +39,204 @@ METRICS = {
   "hum":  {"label": "HUM", "fmt": "%.1f"},
 }
 
-# ---------------------------------------------------------------------------
-# PAGES: which metrics appear on each display mode, left to right.
-#
-# The button in code.py cycles through these in order. To add, remove or
-# reorder a screen, just edit this tuple. The same metric can appear on more
-# than one page (voc is on two). Keep to 3 or fewer columns per page: at
-# scale=3 each digit is 18px wide, and a 240px display gets crowded fast.
-# ---------------------------------------------------------------------------
 PAGES = (
-  ("voc", "pm25", "co2"),   # mode 0
-  ("temp", "hum"),          # mode 1
-  ("voc", "nox"),           # mode 2
-  ("pm1", "pm4", "pm10"),   # mode 3
+  ("voc", "pm25", "co2"),
+  ("temp", "hum"),
+  ("voc", "nox"),
+  ("pm1", "pm4", "pm10"),
 )
+
+# Page indexes inside the PageLayout, which follow the order we add them in:
+# data pages first, then the log page, then the transient message page.
+LOG_PAGE = len(PAGES)
+# How many pages the button cycles through (data pages + log page). The
+# message page is deliberately left out; it's only used for boot status.
+NUM_MODES = len(PAGES) + 1
+
+# The log page is drawn at scale 1 (smallest text) so more fits. Leave room on
+# the right so wrapped text doesn't run under the "!" indicator.
+LOG_MARGIN = 4
+LOG_WRAP_WIDTH_RESERVED = 30
+LOG_MAX_LINES = 12
 
 
 def _label(text, scale):
-  # Small helper so we don't repeat the long Label constructor everywhere.
-
-  # bitmap_label.Label renders text into a bitmap. It uses less RAM and is
-  # faster to update than the plain label.Label class, which matters on a
-  # microcontroller. `scale` is an integer multiplier on the font size.
-  
   return bitmap_label.Label(terminalio.FONT, text=text, scale=scale)
+
+
+def _age(ns):
+  # Format a nanosecond duration as a short string like 45s, 12m or 3h.
+  seconds = ns // 1_000_000_000
+  if seconds < 60:
+    return f"{seconds}s"
+  if seconds < 3600:
+    return f"{seconds // 60}m"
+  return f"{seconds // 3600}h"
 
 
 class DisplayReporter:
 
-  def __init__(self, params):
-    # Threshold ranges from secrets.py. Each looks like:
-    #   "pm25_caution": ((12, 35), (35, 55)), ...   i.e. ((min, max), (min, max))
-    self.thresholds = params["thresholds"]
+  def __init__(self, thresholds):
+    self.thresholds = thresholds
 
-    # board.DISPLAY is created by CircuitPython at boot for boards with a
-    # built-in screen. Keep a short reference to it.
+    # code.py uses this name when it logs or clears errors for this reporter.
+    self.name = "display"
+
     self.display = board.DISPLAY
     self.display.brightness = 0.6
 
-    # Index into PAGES of the data page currently selected by the button.
-    # Tracked separately from what's on screen, because the message page can
-    # temporarily cover the data page and we need to know what to come back to.
+    # Index of the page the button has selected (0..NUM_MODES-1).
     self.mode = 0
 
-    # Lookup table of every on-screen label, grouped by metric:
-    #   self.cells["voc"] -> [(value_label, name_label), (value_label, name_label)]
-    # "voc" has two entries because it's on two pages. When a new voc reading
-    # arrives we update both, so whichever page is showing is always current.
     self.cells = {key: [] for key in METRICS}
+
+    # One entry per error source ("sensor", "influx", "display", ...):
+    #   self.errors["influx"] = {"msg": "HTTP 401", "since": <ns>, "active": True}
+    # Keyed by source, so the dict can never grow beyond a handful of entries
+    # no matter how long an outage lasts.
+    # "since" is when the state last changed: the failure start while active,
+    # or the recovery time once active is False.
+    self.errors = {}
 
     width, height = self.display.width, self.display.height
 
-    # PageLayout holds several "pages" (any displayio Group works as one) and
-    # shows only one at a time. The (0, 0) is its x, y position on screen.
     self.pages = PageLayout(0, 0)
 
-    # Build one GridLayout page per entry in PAGES.
+    # ---- data pages (indexes 0 .. len(PAGES)-1) ----
     for page_index, keys in enumerate(PAGES):
-
-      # A grid that fills the whole screen. grid_size is (columns, rows):
-      # one column per metric, and two rows (number on top, name below).
-      # The grid divides the screen evenly, which replaces all the hand-tuned
-      # x/y coordinates and padding values from the old version.
       grid = GridLayout(0, 0, width, height, grid_size=(len(keys), 2))
-
       for column, key in enumerate(keys):
-        # The big number. "000" is a placeholder until the first reading;
-        # the real text is set in report().
         value_label = _label("000", 2)
-
-        # The smaller metric name, taken from the METRICS table.
         name_label = _label(METRICS[key]["label"], 1)
-
-        # add_content(item, grid_position, cell_size, cell_anchor_point)
-        #   grid_position    : (column, row) of the top-left cell it occupies
-        #   cell_size        : (1, 1) means it spans a single cell
-        #   cell_anchor_point: (0.5, 0.5) centers it in the cell. (0, 0) would
-        #                      be top-left and (1, 1) bottom-right.
         grid.add_content(value_label, (column, 0), (1, 1), (0.5, 0.9))
         grid.add_content(name_label, (column, 1), (1, 1), (0.5, 0.1))
-
-        # Remember the pair so report() can find it by metric key later.
         self.cells[key].append((value_label, name_label))
-
-      # Register the finished grid as a page. The name lets us jump to it
-      # with show_page(page_name=...), though we mostly use the index.
       self.pages.add_content(grid, page_name=f"mode{page_index}")
 
-    # One extra page after the data pages: a single label for status and error
-    # text. Because it is added last, its page index is len(PAGES), so it
-    # never collides with the data page indexes 0..len(PAGES)-1.
+    # ---- log page (index LOG_PAGE) ----
+    # One multi-line label anchored to the top-left corner.
+    self.log_label = _label("", 1)
+    self.log_label.anchor_point = (0, 0)
+    self.log_label.anchored_position = (LOG_MARGIN, LOG_MARGIN)
+    self.pages.add_content(self.log_label, page_name="log")
+
+    # ---- message page (index LOG_PAGE + 1) ----
+    # Big centered text for boot status ("Sensor initialized"), same as before.
     self.message = _label("", 2)
-    # anchor_point says which part of the label the position refers to.
-    # (0.5, 0.5) is its center, so the text is centered on the screen.
     self.message.anchor_point = (0.5, 0.5)
     self.message.anchored_position = (width // 2, height // 2)
+    self.message.color = GREEN
     self.pages.add_content(self.message, page_name="message")
 
-    # Make the PageLayout the root of the display (replaces the older
-    # display.show(...) call). Start on the message page so boot messages show.
-    self.display.root_group = self.pages
+    # ---- error indicator ----
+    # A plain "!" label in the corner. It lives in the root group next to the
+    # PageLayout (not inside it), so it's drawn on top of whichever page is
+    # showing. A text label is cheap on RAM; swap it for a vectorio.Circle if
+    # you want something fancier.
+    self.indicator = _label("!", 2)
+    self.indicator.color = RED
+    self.indicator.anchor_point = (1, 0)               # anchor to its own top-right...
+    self.indicator.anchored_position = (width - 4, 2)  # ...and put that near the corner
+    self.indicator.hidden = True                       # shown only while errors are active
+
+    self.root = displayio.Group()
+    self.root.append(self.pages)
+    self.root.append(self.indicator)
+    self.display.root_group = self.root
+
+    self._render_log()
     self.pages.show_page(page_name="message")
 
   # -------------------------------------------------------------------------
-  # Messages and errors
+  # Boot/status messages (transient, full screen, not part of the error log)
   # -------------------------------------------------------------------------
-
-  def _show_message(self, msg, color):
-    # Display centered, wrapped text on the message page.
-    # Break the text into lines no wider than half the screen so it wraps
-    # instead of running off the edge. wrap_text_to_pixels returns a list.
-    lines = wrap_text_to_pixels(msg, self.display.width // 2, terminalio.FONT)
-
-    self.message.color = color
-    self.message.text = "\n".join(lines)
-
-    # Switch the screen to the message page. It stays there until report()
-    # or incrementMode() switches back to a data page.
-    self.pages.show_page(page_name="message")
-
-    # Also print to the serial console so you can see it over USB.
-    print(msg + "\n")
 
   def showMessage(self, msg):
-    # Show a normal status message in green.
-    self._show_message(msg, GREEN)
-    print(msg + "\n")
+    """Show big centered status text. The next report() switches back to the
+    selected page, same as before."""
+    self.message.text = msg
+    self.pages.show_page(page_name="message")
+    print(msg)
 
-  def showError(self, msg):
-    # Show an error message in red.
-    self._show_message(msg, RED)
-    print(msg + "\n")
+  # -------------------------------------------------------------------------
+  # Error tracking
+  # -------------------------------------------------------------------------
+
+  @property
+  def has_errors(self):
+    # True if any source is currently failing. code.py also uses this to
+    # drive the NeoPixel.
+    return any(err["active"] for err in self.errors.values())
+
+  def logError(self, source, error):
+    # Record that `source` is failing. Safe to call every loop while it
+    # keeps failing; the original start time is kept.
+    msg = str(error)
+    print(source + " error: " + msg)
+
+    existing = self.errors.get(source)
+    if existing and existing["active"]:
+      # Still failing: keep when it started, but show the latest message.
+      existing["msg"] = msg
+    else:
+      # New failure (or a relapse after recovery): start the clock.
+      self.errors[source] = {"msg": msg, "since": time.monotonic_ns(), "active": True}
+
+    self._refresh_log()
+
+  def clearError(self, source):
+    # Record that `source` worked. A no-op unless it was failing. The entry
+    # stays in the log as 'ok' so you can still see a blip that happened while
+    # you weren't looking.
+    err = self.errors.get(source)
+    if err and err["active"]:
+      err["active"] = False
+      err["since"] = time.monotonic_ns()
+      self._refresh_log()
+
+  def _refresh_log(self):
+    # Indicator on if anything is failing, off otherwise.
+    self.indicator.hidden = not self.has_errors
+    self._render_log()
+
+  def _render_log(self):
+    # Rebuild the log page text from self.errors.
+    if not self.errors:
+      self.log_label.color = GREEN
+      self.log_label.text = "No errors"
+      return
+
+    now = time.monotonic_ns()
+    wrap_width = self.display.width - LOG_MARGIN - LOG_WRAP_WIDTH_RESERVED
+    lines = []
+
+    for source, err in self.errors.items():
+      age = _age(now - err["since"])
+      if err["active"]:
+        lines.append(f"! {source}: failing for {age}")
+        # Wrap the (often long) message and indent it under the heading.
+        for line in wrap_text_to_pixels(err["msg"], wrap_width, terminalio.FONT):
+          lines.append("  " + line)
+      else:
+        lines.append(f"  {source}: ok for {age}")
+        lines.append("  (last: " + err["msg"][:24] + ")")
+
+    # Don't run off the bottom of the screen.
+    self.log_label.text = "\n".join(lines[:LOG_MAX_LINES])
+    # One color for the whole label: red while anything is failing.
+    self.log_label.color = RED if self.has_errors else GREEN
 
   # -------------------------------------------------------------------------
   # Coloring
   # -------------------------------------------------------------------------
 
   def _color(self, key, value):
-    # Return GREEN, YELLOW or RED for a reading, using the secrets thresholds.
     t = self.thresholds
-
-    # Start from "all good", then escalate. Danger is checked last so it wins
-    # if a value happens to fall inside both a caution and a danger range.
     color = GREEN
-
-    # Ranges are half-open: a value matches if lo <= value < hi.
-    # any(...) is True if the value falls inside at least one range.
-    # (The old version used `range` as a variable name, which shadowed the
-    # Python builtin of the same name. Unpacking into lo/hi avoids that.)
     if any(lo <= value < hi for lo, hi in t[key + "_caution"]):
       color = YELLOW
     if any(lo <= value < hi for lo, hi in t[key + "_danger"]):
       color = RED
-
     return color
 
   # -------------------------------------------------------------------------
@@ -219,12 +244,10 @@ class DisplayReporter:
   # -------------------------------------------------------------------------
 
   def incrementMode(self):
-    # Advance to the next data page, wrapping back to the first.
-    # code.py calls this when the mode button is pressed. It also brings the
-    # screen back from the message page if an error or status was showing.
-
-    # The modulo operator wraps us back to 0 after the last page.
-    self.mode = (self.mode + 1) % len(PAGES)
+    # Button handler: data pages..., then the log page, then back to the first.
+    self.mode = (self.mode + 1) % NUM_MODES
+    if self.mode == LOG_PAGE:
+      self._render_log()  # refresh the "for 12m" ages before showing
     self.pages.show_page(page_index=self.mode)
 
   # -------------------------------------------------------------------------
@@ -233,35 +256,26 @@ class DisplayReporter:
 
   def report(self, data):
     # Update every label from a fresh set of readings.
+    #
+    # Exceptions are NOT caught here anymore. code.py's report() wrapper catches
+    # them and calls logError("display", e), so every reporter's failures end up
+    # in the same place.
+    for key, spec in METRICS.items():
+      value = data[key]
+      if "convert" in spec:
+        value = spec["convert"](value)
 
-    # `data` is the dict built in code.py, with keys matching METRICS.
-    try:
-      for key, spec in METRICS.items():
-        value = data[key]
+      color = self._color(key, value)
+      text = spec.get("fmt", "%s") % value
 
-        # Apply a unit conversion if this metric has one (temp: C -> F).
-        # We convert first so colors and text both use the converted number.
-        if "convert" in spec:
-          value = spec["convert"](value)
+      for value_label, name_label in self.cells[key]:
+        value_label.text = text
+        value_label.color = color
+        name_label.color = color
 
-        color = self._color(key, value)
+    # Return to the page the button selected (also dismisses a boot message).
+    self.pages.show_page(page_index=self.mode)
 
-        # Format the number. spec.get("fmt", "%s") falls back to "%s" when no
-        # format is given, which is the same as str(value).
-        text = spec.get("fmt", "%s") % value
-
-        # Update every on-screen copy of this metric (one per page it's on).
-        # Color both the number and its name so the whole cell reads as one
-        # status at a glance.
-        for value_label, name_label in self.cells[key]:
-          value_label.text = text
-          value_label.color = color
-          name_label.color = color
-
-      # Fresh data is in, so switch to the selected data page. This also
-      # clears any old error message that was covering the screen.
-      self.pages.show_page(page_index=self.mode)
-
-    except Exception as e:
-      # Never let a display problem take down the sensor loop in code.py.
-      print("DisplayReporter error: " + str(e))
+    # If you're sitting on the log page, keep its ages current.
+    if self.mode == LOG_PAGE:
+      self._render_log()

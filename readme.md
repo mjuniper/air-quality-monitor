@@ -1,23 +1,17 @@
 TODO:
-	- wire in the new sensor
-		- update the grafana dashboard
-		- update thresholds for nox and voc
-	- further tweak display reporter
-		- maybe slightly smaller text
-		- maybe integer for voc and nox
-		- maybe tweak the gridlayout
+	- reconnect if we lose wifi - from a conversation with claude:
+		- Fall back to a hard reset. If reconnecting fails N times in a row, microcontroller.reset() is a blunt but effective fix, and it’s what most always-on CircuitPython projects do. You can also enable the watchdog (microcontroller.watchdog) so a hang forces a reboot on its own.
+		- Optional: buffer readings. If you care about not losing data during outages, keep the last few readings in a list and flush them when Wi-Fi returns. With a 30s to 5 min interval you’d only need a small buffer, and RAM is the limit, so cap it.
+	- ask claude to look at code.py and other files
 	- sensor...
 		- calibration?
 		- fan cleaning? - maybe automatically once a week
-	- better error handling
 	- get the notification reporter working
 	- see TODOS in code files
-	- update to keep secrets in settings.toml
 	- use asyncio (or something) to make it respond to button presses by changing the display mode - do this now but it is janky
   - in an effort to make it resilient, i transiently write some errors to the screen
     - and others i only ever print to the serial console... it would be nice to log errors somehow and print something persistently to the screen to indicate that i should check those logs
     - https://learn.adafruit.com/circuitpython-essentials/circuitpython-storage
-	- ask gemini for other ways to improve the code (and make it more pythonic)
 	- update this file...
 		- as built
 	- push all changes upstream
