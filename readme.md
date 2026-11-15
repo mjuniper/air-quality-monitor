@@ -2,7 +2,11 @@ TODO:
 	- wire in the new sensor
 		- update the grafana dashboard
 		- update thresholds for nox and voc
-	- refactor display reporter as discussed with copilot
+	- further tweak display reporter
+		- maybe slightly smaller text
+		- maybe integer for voc and nox
+		- maybe tweak the gridlayout
+	- better error handling
 	- get the notification reporter working
 	- see TODOS in code files
 	- update to keep secrets in settings.toml

@@ -1,280 +1,267 @@
+# reporters/display.py
+#
+# Shows air quality readings on the ESP32-S3's built-in TFT.
+#
+# How the screen is organized:
+#
+#   PageLayout (root of the display)
+#   ├── page "mode0": GridLayout  -> voc, pm25, co2
+#   ├── page "mode1": GridLayout  -> temp, hum
+#   ├── page "mode2": GridLayout  -> voc, nox
+#   ├── page "mode3": GridLayout  -> pm1, pm4, pm10
+#   └── page "message": one centered Label, used for status and error text
+#
+# PageLayout shows exactly one page at a time, so switching display modes is
+# just "show a different page". Each page's GridLayout has one column per
+# metric and two rows: the big number on top and the name underneath.
+#
+# Docs:
+#   https://learn.adafruit.com/circuitpython-display-support-using-displayio/introduction
+#   https://learn.adafruit.com/circuitpython-display_text-library/overview
+#   https://docs.circuitpython.org/projects/displayio_layout/en/latest/
+
 import board
 import terminalio
-import displayio
 from adafruit_display_text import bitmap_label, wrap_text_to_pixels
+from adafruit_displayio_layout.layouts.grid_layout import GridLayout
+from adafruit_displayio_layout.layouts.page_layout import PageLayout
 
-# https://learn.adafruit.com/circuitpython-display-support-using-displayio/introduction
-# https://learn.adafruit.com/circuitpython-display_text-library/overview
-# https://learn.adafruit.com/adafruit-1-14-240x135-color-tft-breakout/circuitpython-displayio-quickstart
+# Status colors as 24-bit RGB hex values (0xRRGGBB).
+GREEN = 0x00FA9A   # reading is fine
+YELLOW = 0xFFA500  # caution range
+RED = 0xFF0000     # danger range (also used for error messages)
 
-# https://learn.adafruit.com/aqi-case/coding-the-aqi-case
+# ---------------------------------------------------------------------------
+# METRICS: everything that differs from one measurement to the next lives here.
+#
+# The key (e.g. "pm25") has to match two other things:
+#   1. the key in the `data` dict that code.py passes to report()
+#   2. the prefix of the threshold names in secrets['thresholds'],
+#      i.e. "pm25_caution" and "pm25_danger"
+#
+# Per-metric options:
+#   "label"   : the name shown under the number (required)
+#   "fmt"     : a printf-style format for the number. Defaults to "%s", which
+#               just uses str(value). Use "%.0f" or "%.1f" to control decimals.
+#   "convert" : optional function applied to the raw value BEFORE coloring and
+#               display. Thresholds are compared against the converted value,
+#               so the temp thresholds in secrets must be in Fahrenheit.
+# ---------------------------------------------------------------------------
+METRICS = {
+  "pm1":  {"label": "PM 1"},
+  "pm25": {"label": "PM 2.5"},
+  "pm4":  {"label": "PM 4"},
+  "pm10": {"label": "PM 10"},
+  "voc":  {"label": "VOC"},
+  "nox":  {"label": "NOX"},
+  "co2":  {"label": "CO2", "fmt": "%.0f"},
+  "temp": {"label": "TEMP", "fmt": "%.1f", "convert": lambda c: c * 1.8 + 32},  # C -> F
+  "hum":  {"label": "HUM", "fmt": "%.1f"},
+}
 
-# colors for various statuses:
-# https://www.rapidtables.com/web/color/green-color.html
-# https://www.rapidtables.com/web/color/orange-color.html
-# https://www.rapidtables.com/web/color/red-color.html
+# ---------------------------------------------------------------------------
+# PAGES: which metrics appear on each display mode, left to right.
+#
+# The button in code.py cycles through these in order. To add, remove or
+# reorder a screen, just edit this tuple. The same metric can appear on more
+# than one page (voc is on two). Keep to 3 or fewer columns per page: at
+# scale=3 each digit is 18px wide, and a 240px display gets crowded fast.
+# ---------------------------------------------------------------------------
+PAGES = (
+  ("voc", "pm25", "co2"),   # mode 0
+  ("temp", "hum"),          # mode 1
+  ("voc", "nox"),           # mode 2
+  ("pm1", "pm4", "pm10"),   # mode 3
+)
 
-# New display modes:
-#   0. voc, pm25, co2
-#   1. temp, hum
-#   2. voc, nox
-#   3. pm1, pm4, pm10
-#   5. error log
 
-green = 0x00FA9A #0x00FFFF 0x228B22
-yellow = 0xFFA500
-red = 0xFF0000
+def _label(text, scale):
+  # Small helper so we don't repeat the long Label constructor everywhere.
+
+  # bitmap_label.Label renders text into a bitmap. It uses less RAM and is
+  # faster to update than the plain label.Label class, which matters on a
+  # microcontroller. `scale` is an integer multiplier on the font size.
+  
+  return bitmap_label.Label(terminalio.FONT, text=text, scale=scale)
+
 
 class DisplayReporter:
 
   def __init__(self, params):
-    self.thresholds = params['thresholds']
+    # Threshold ranges from secrets.py. Each looks like:
+    #   "pm25_caution": ((12, 35), (35, 55)), ...   i.e. ((min, max), (min, max))
+    self.thresholds = params["thresholds"]
 
-    board.DISPLAY.brightness = 0.6
-    self.display_mode = 0
-  
-    self.message_text_area = bitmap_label.Label(terminalio.FONT, text="", scale=2)
-    self.message_text_area.anchor_point = (0.5, 0.5)
-    self.message_text_area.anchored_position = (board.DISPLAY.width // 2, board.DISPLAY.height // 2)
-    self.message_text_area.color = green
-    # board.DISPLAY.show(self.message_text_area)
-    board.DISPLAY.root_group = self.message_text_area
+    # board.DISPLAY is created by CircuitPython at boot for boards with a
+    # built-in screen. Keep a short reference to it.
+    self.display = board.DISPLAY
+    self.display.brightness = 0.6
 
-    # groups for the various modes
-    self.reporter_group_0 = displayio.Group()
-    self.reporter_group_1 = displayio.Group()
-    self.reporter_group_2 = displayio.Group()
-    self.reporter_group_3 = displayio.Group()
-    self.reporter_groups = (self.reporter_group_0, self.reporter_group_1, self.reporter_group_2, self.reporter_group_3)
+    # Index into PAGES of the data page currently selected by the button.
+    # Tracked separately from what's on screen, because the message page can
+    # temporarily cover the data page and we need to know what to come back to.
+    self.mode = 0
 
-    # tuples to hold labels for various data
-    self.co2_labels = []
-    self.voc_labels = []
-    self.nox_labels = []
-    self.pm1_labels = []
-    self.pm25_labels = []
-    self.pm10_labels = []
-    self.pm4_labels = []
-    self.temp_labels = []
-    self.hum_labels = []
+    # Lookup table of every on-screen label, grouped by metric:
+    #   self.cells["voc"] -> [(value_label, name_label), (value_label, name_label)]
+    # "voc" has two entries because it's on two pages. When a new voc reading
+    # arrives we update both, so whichever page is showing is always current.
+    self.cells = {key: [] for key in METRICS}
 
-    padding = 36
+    width, height = self.display.width, self.display.height
 
-    # reporter_group_0
-    pm2_value = bitmap_label.Label(terminalio.FONT, text="000", scale=3)
-    pm2_value.anchor_point = (0.5, 0)
-    pm2_value.anchored_position = (40, padding)
-    pm2_label = bitmap_label.Label(terminalio.FONT, text="PM 2.5", scale=2)
-    pm2_label.anchor_point = (0.5, 1)
-    pm2_label.anchored_position = (40, board.DISPLAY.height - padding)
-    self.pm25_labels.append((pm2_label, pm2_value))
+    # PageLayout holds several "pages" (any displayio Group works as one) and
+    # shows only one at a time. The (0, 0) is its x, y position on screen.
+    self.pages = PageLayout(0, 0)
 
-    voc_value = bitmap_label.Label(terminalio.FONT, text="000", scale=3)
-    voc_value.anchor_point = (0.5, 0)
-    voc_value.anchored_position = (board.DISPLAY.width // 2, padding)
-    voc_label = bitmap_label.Label(terminalio.FONT, text="VOC", scale=2, padding_bottom=padding)
-    voc_label.anchor_point = (0.5, 1)
-    voc_label.anchored_position = (board.DISPLAY.width // 2, board.DISPLAY.height - padding)
-    self.voc_labels.append((voc_label, voc_value))
+    # Build one GridLayout page per entry in PAGES.
+    for page_index, keys in enumerate(PAGES):
 
-    co2_value = bitmap_label.Label(terminalio.FONT, text="000", scale=3, padding_top=padding)
-    co2_value.anchor_point = (0.5, 0)
-    co2_value.anchored_position = (200, padding)
-    co2_label = bitmap_label.Label(terminalio.FONT, text="CO2", scale=2, padding_bottom=padding)
-    co2_label.anchor_point = (0.5, 1)
-    co2_label.anchored_position = (200, board.DISPLAY.height - padding)
-    self.co2_labels.append((co2_label, co2_value))
-    
-    self.reporter_group_0.append(pm2_value)
-    self.reporter_group_0.append(pm2_label)
-    self.reporter_group_0.append(voc_value)
-    self.reporter_group_0.append(voc_label)
-    self.reporter_group_0.append(co2_value)
-    self.reporter_group_0.append(co2_label)
+      # A grid that fills the whole screen. grid_size is (columns, rows):
+      # one column per metric, and two rows (number on top, name below).
+      # The grid divides the screen evenly, which replaces all the hand-tuned
+      # x/y coordinates and padding values from the old version.
+      grid = GridLayout(0, 0, width, height, grid_size=(len(keys), 2))
 
-    # reporter_group_1
-    temp_value = bitmap_label.Label(terminalio.FONT, text="000", scale=3)
-    temp_value.anchor_point = (0.5, 0)
-    temp_value.anchored_position = (60, padding)
-    temp_label = bitmap_label.Label(terminalio.FONT, text="TEMP", scale=2)
-    temp_label.anchor_point = (0.5, 1)
-    temp_label.anchored_position = (60, board.DISPLAY.height - padding)
-    self.temp_labels.append((temp_label, temp_value))
+      for column, key in enumerate(keys):
+        # The big number. "000" is a placeholder until the first reading;
+        # the real text is set in report().
+        value_label = _label("000", 2)
 
-    hum_value = bitmap_label.Label(terminalio.FONT, text="000", scale=3, padding_top=padding)
-    hum_value.anchor_point = (0.5, 0)
-    hum_value.anchored_position = (180, padding)
-    hum_label = bitmap_label.Label(terminalio.FONT, text="HUM", scale=2, padding_bottom=padding)
-    hum_label.anchor_point = (0.5, 1)
-    hum_label.anchored_position = (180, board.DISPLAY.height - padding)
-    self.hum_labels.append((hum_label, hum_value))
-    
-    self.reporter_group_1.append(temp_value)
-    self.reporter_group_1.append(temp_label)
-    self.reporter_group_1.append(hum_value)
-    self.reporter_group_1.append(hum_label)
+        # The smaller metric name, taken from the METRICS table.
+        name_label = _label(METRICS[key]["label"], 1)
 
-    # reporter_group_2
-    voc_value_2 = bitmap_label.Label(terminalio.FONT, text="000", scale=3)
-    voc_value_2.anchor_point = (0.5, 0)
-    voc_value_2.anchored_position = (60, padding)
-    voc_label_2 = bitmap_label.Label(terminalio.FONT, text="VOC", scale=2)
-    voc_label_2.anchor_point = (0.5, 1)
-    voc_label_2.anchored_position = (60, board.DISPLAY.height - padding)
-    self.voc_labels.append((voc_label_2, voc_value_2))
+        # add_content(item, grid_position, cell_size, cell_anchor_point)
+        #   grid_position    : (column, row) of the top-left cell it occupies
+        #   cell_size        : (1, 1) means it spans a single cell
+        #   cell_anchor_point: (0.5, 0.5) centers it in the cell. (0, 0) would
+        #                      be top-left and (1, 1) bottom-right.
+        grid.add_content(value_label, (column, 0), (1, 1), (0.5, 0.9))
+        grid.add_content(name_label, (column, 1), (1, 1), (0.5, 0.1))
 
-    nox_value = bitmap_label.Label(terminalio.FONT, text="000", scale=3, padding_top=padding)
-    nox_value.anchor_point = (0.5, 0)
-    nox_value.anchored_position = (180, padding)
-    nox_label = bitmap_label.Label(terminalio.FONT, text="NOX", scale=2, padding_bottom=padding)
-    nox_label.anchor_point = (0.5, 1)
-    nox_label.anchored_position = (180, board.DISPLAY.height - padding)
-    self.nox_labels.append((nox_label, nox_value))
-    
-    self.reporter_group_2.append(voc_value_2)
-    self.reporter_group_2.append(voc_label_2)
-    self.reporter_group_2.append(nox_value)
-    self.reporter_group_2.append(nox_label)
+        # Remember the pair so report() can find it by metric key later.
+        self.cells[key].append((value_label, name_label))
 
-    # reporter_group_3
-    pm1_value = bitmap_label.Label(terminalio.FONT, text="000", scale=3)
-    pm1_value.anchor_point = (0.5, 0)
-    pm1_value.anchored_position = (40, padding)
-    pm1_label = bitmap_label.Label(terminalio.FONT, text="PM 1", scale=2)
-    pm1_label.anchor_point = (0.5, 1)
-    pm1_label.anchored_position = (40, board.DISPLAY.height - padding)
-    self.pm1_labels.append((pm1_label, pm1_value))
-    
-    pm4_value = bitmap_label.Label(terminalio.FONT, text="000", scale=3, padding_top=padding)
-    pm4_value.anchor_point = (0.5, 0)
-    pm4_value.anchored_position = (200, padding)
-    pm4_label = bitmap_label.Label(terminalio.FONT, text="PM 4", scale=2, padding_bottom=padding)
-    pm4_label.anchor_point = (0.5, 1)
-    pm4_label.anchored_position = (200, board.DISPLAY.height - padding)
-    self.pm4_labels.append((pm4_label, pm4_value))
+      # Register the finished grid as a page. The name lets us jump to it
+      # with show_page(page_name=...), though we mostly use the index.
+      self.pages.add_content(grid, page_name=f"mode{page_index}")
 
-    pm10_value = bitmap_label.Label(terminalio.FONT, text="000", scale=3)
-    pm10_value.anchor_point = (0.5, 0)
-    pm10_value.anchored_position = (board.DISPLAY.width // 2, padding)
-    pm10_label = bitmap_label.Label(terminalio.FONT, text="PM 10", scale=2, padding_bottom=padding)
-    pm10_label.anchor_point = (0.5, 1)
-    pm10_label.anchored_position = (board.DISPLAY.width // 2, board.DISPLAY.height - padding)
-    self.pm10_labels.append((pm10_label, pm10_value))
-    
-    self.reporter_group_3.append(pm1_value)
-    self.reporter_group_3.append(pm1_label)
-    self.reporter_group_3.append(pm4_value)
-    self.reporter_group_3.append(pm4_label)
-    self.reporter_group_3.append(pm10_value)
-    self.reporter_group_3.append(pm10_label)
+    # One extra page after the data pages: a single label for status and error
+    # text. Because it is added last, its page index is len(PAGES), so it
+    # never collides with the data page indexes 0..len(PAGES)-1.
+    self.message = _label("", 2)
+    # anchor_point says which part of the label the position refers to.
+    # (0.5, 0.5) is its center, so the text is centered on the screen.
+    self.message.anchor_point = (0.5, 0.5)
+    self.message.anchored_position = (width // 2, height // 2)
+    self.pages.add_content(self.message, page_name="message")
 
-    # reporter_group_4
-    # voc_value_2 = bitmap_label.Label(terminalio.FONT, text="000", scale=3)
-    # voc_value_2.anchor_point = (0.5, 0)
-    # voc_value_2.anchored_position = (60, padding)
-    # voc_label_2 = bitmap_label.Label(terminalio.FONT, text="VOC", scale=2)
-    # voc_label_2.anchor_point = (0.5, 1)
-    # voc_label_2.anchored_position = (60, board.DISPLAY.height - padding)
-    # self.voc_labels.append((voc_label_2, voc_value_2))
+    # Make the PageLayout the root of the display (replaces the older
+    # display.show(...) call). Start on the message page so boot messages show.
+    self.display.root_group = self.pages
+    self.pages.show_page(page_name="message")
 
-    # aqi_value = bitmap_label.Label(terminalio.FONT, text="000", scale=3, padding_top=padding)
-    # aqi_value.anchor_point = (0.5, 0)
-    # aqi_value.anchored_position = (180, padding)
-    # aqi_label = bitmap_label.Label(terminalio.FONT, text="AQI", scale=2, padding_bottom=padding)
-    # aqi_label.anchor_point = (0.5, 1)
-    # aqi_label.anchored_position = (180, board.DISPLAY.height - padding)
-    # self.aqi_labels.append((aqi_label, aqi_value))
-    
-    # self.reporter_group_4.append(voc_value_2)
-    # self.reporter_group_4.append(voc_label_2)
-    # self.reporter_group_4.append(aqi_value)
-    # self.reporter_group_4.append(aqi_label)
+  # -------------------------------------------------------------------------
+  # Messages and errors
+  # -------------------------------------------------------------------------
 
-  def _showMessage (self, msg, color):
-    self.message_text_area.color = color
+  def _show_message(self, msg, color):
+    # Display centered, wrapped text on the message page.
+    # Break the text into lines no wider than half the screen so it wraps
+    # instead of running off the edge. wrap_text_to_pixels returns a list.
+    lines = wrap_text_to_pixels(msg, self.display.width // 2, terminalio.FONT)
 
-    lines = wrap_text_to_pixels(msg, board.DISPLAY.width // 2, terminalio.FONT)
-    formatted_message = '\n'.join(lines)
+    self.message.color = color
+    self.message.text = "\n".join(lines)
 
-    self.message_text_area.text = formatted_message
-    # board.DISPLAY.show(self.message_text_area)
-    board.DISPLAY.root_group = self.message_text_area
-    print(formatted_message + '\n')
+    # Switch the screen to the message page. It stays there until report()
+    # or incrementMode() switches back to a data page.
+    self.pages.show_page(page_name="message")
 
-  def showMessage (self, msg):
-    self._showMessage(msg, green)
+    # Also print to the serial console so you can see it over USB.
+    print(msg + "\n")
 
-  def showError (self, msg):
-    self._showMessage(msg, red)
+  def showMessage(self, msg):
+    # Show a normal status message in green.
+    self._show_message(msg, GREEN)
+    print(msg + "\n")
 
-  def getColor (self, value, caution_threshold, danger_threshold):
-    # threshold looks like: ((min, max), (min, max), ...)
-    color = green
+  def showError(self, msg):
+    # Show an error message in red.
+    self._show_message(msg, RED)
+    print(msg + "\n")
 
-    for range in caution_threshold:
-      if value >= range[0] and value < range[1]:
-        color = yellow
+  # -------------------------------------------------------------------------
+  # Coloring
+  # -------------------------------------------------------------------------
 
-    for range in danger_threshold:
-      if value >= range[0] and value < range[1]:
-        color = red
+  def _color(self, key, value):
+    # Return GREEN, YELLOW or RED for a reading, using the secrets thresholds.
+    t = self.thresholds
+
+    # Start from "all good", then escalate. Danger is checked last so it wins
+    # if a value happens to fall inside both a caution and a danger range.
+    color = GREEN
+
+    # Ranges are half-open: a value matches if lo <= value < hi.
+    # any(...) is True if the value falls inside at least one range.
+    # (The old version used `range` as a variable name, which shadowed the
+    # Python builtin of the same name. Unpacking into lo/hi avoids that.)
+    if any(lo <= value < hi for lo, hi in t[key + "_caution"]):
+      color = YELLOW
+    if any(lo <= value < hi for lo, hi in t[key + "_danger"]):
+      color = RED
 
     return color
-  
-  def setValues(self, labels, value, color):
-    for pair in labels:
-      pair[1].text = str(value)
-      for label in pair:
-        label.color = color
+
+  # -------------------------------------------------------------------------
+  # Display modes
+  # -------------------------------------------------------------------------
 
   def incrementMode(self):
-    display_mode = self.display_mode + 1
-    if display_mode >= len(self.reporter_groups):
-      display_mode = 0
-    self.display_mode = display_mode
-    # board.DISPLAY.show(self.reporter_groups[self.display_mode])
-    board.DISPLAY.root_group = self.reporter_groups[self.display_mode]
+    # Advance to the next data page, wrapping back to the first.
+    # code.py calls this when the mode button is pressed. It also brings the
+    # screen back from the message page if an error or status was showing.
+
+    # The modulo operator wraps us back to 0 after the last page.
+    self.mode = (self.mode + 1) % len(PAGES)
+    self.pages.show_page(page_index=self.mode)
+
+  # -------------------------------------------------------------------------
+  # Reporting
+  # -------------------------------------------------------------------------
 
   def report(self, data):
+    # Update every label from a fresh set of readings.
+
+    # `data` is the dict built in code.py, with keys matching METRICS.
     try:
-      pm1 = data["pm1"]
-      pm1_color = self.getColor(pm1, self.thresholds["pm1_caution"], self.thresholds["pm1_danger"])
-      self.setValues(self.pm1_labels, pm1, pm1_color)
+      for key, spec in METRICS.items():
+        value = data[key]
 
-      pm25 = data["pm25"]
-      pm2_color = self.getColor(pm25, self.thresholds["pm25_caution"], self.thresholds["pm25_danger"])
-      self.setValues(self.pm25_labels, pm25, pm2_color)
+        # Apply a unit conversion if this metric has one (temp: C -> F).
+        # We convert first so colors and text both use the converted number.
+        if "convert" in spec:
+          value = spec["convert"](value)
 
-      pm4 = data["pm4"]
-      pm4_color = self.getColor(pm4, self.thresholds["pm4_caution"], self.thresholds["pm4_danger"])
-      self.setValues(self.pm4_labels, pm4, pm4_color)
+        color = self._color(key, value)
 
-      pm10 = data["pm10"]
-      pm10_color = self.getColor(pm10, self.thresholds["pm10_caution"], self.thresholds["pm10_danger"])
-      self.setValues(self.pm10_labels, pm10, pm10_color)
+        # Format the number. spec.get("fmt", "%s") falls back to "%s" when no
+        # format is given, which is the same as str(value).
+        text = spec.get("fmt", "%s") % value
 
-      voc = data["voc"]
-      voc_color = self.getColor(voc, self.thresholds["voc_caution"], self.thresholds["voc_danger"])
-      self.setValues(self.voc_labels, voc, voc_color)
+        # Update every on-screen copy of this metric (one per page it's on).
+        # Color both the number and its name so the whole cell reads as one
+        # status at a glance.
+        for value_label, name_label in self.cells[key]:
+          value_label.text = text
+          value_label.color = color
+          name_label.color = color
 
-      nox = data["nox"]
-      nox_color = self.getColor(nox, self.thresholds["nox_caution"], self.thresholds["nox_danger"])
-      self.setValues(self.nox_labels, nox, nox_color)
-
-      co2 = data["co2"]
-      co2_color = self.getColor(co2, self.thresholds["co2_caution"], self.thresholds["co2_danger"])
-      self.setValues(self.co2_labels, "%.0f" % (co2), co2_color)
-
-      temp = data["temp"] * 1.8 + 32
-      temp_color = self.getColor(temp, self.thresholds["temp_caution"], self.thresholds["temp_danger"])
-      self.setValues(self.temp_labels, "%.1f" % (temp), temp_color)
-
-      hum = data["hum"]
-      hum_color = self.getColor(hum, self.thresholds["hum_caution"], self.thresholds["hum_danger"])
-      self.setValues(self.hum_labels, "%.1f" % (hum), hum_color)
-
-      # board.DISPLAY.show(self.reporter_groups[self.display_mode])
-      board.DISPLAY.root_group = self.reporter_groups[self.display_mode]
+      # Fresh data is in, so switch to the selected data page. This also
+      # clears any old error message that was covering the screen.
+      self.pages.show_page(page_index=self.mode)
 
     except Exception as e:
-      print('DisplayReporter error: ' + str(e))
+      # Never let a display problem take down the sensor loop in code.py.
+      print("DisplayReporter error: " + str(e))

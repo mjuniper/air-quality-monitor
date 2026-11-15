@@ -66,12 +66,13 @@ stemma_i2c = board.STEMMA_I2C()
 
 sensor = adafruit_sen6x.SEN66(stemma_i2c)
 sensor.sensor_altitude = 1525
-print("Sensor initialized")
+display_reporter.showMessage("Sensor initialized")
 sensor.start_measurement()
 # Note: CO2 values will be 0xFFFF for first 5-6 seconds after measurement start.
 # Note: NOx values will be 0x7FFF for first 10-11 seconds after power-on/reset.
-time.sleep(15)
-print("Measurement started")
+time.sleep(12)
+display_reporter.showMessage("Measurement started")
+time.sleep(3)
 
 # #####
 # loop!
@@ -82,7 +83,7 @@ last_mode_change = time.time()
 while True:
   if not change_display_mode.value and time.time() - last_mode_change > 0.8:
     display_reporter.incrementMode()
-    last_mode_change = last_mode_change = time.time()
+    last_mode_change = time.time()
 
   if first_run or ticks_diff(ticks_ms(), sensor_clock) > sampling_interval:
 
