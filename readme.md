@@ -1,4 +1,7 @@
 TODO:
+	- suggestions from claude:
+		- The Wi-Fi failure reason gets lost.
+		- If the first read fails, the screen sticks on “Measurement started”.
 	- reconnect if we lose wifi - from a conversation with claude:
 		- Fall back to a hard reset. If reconnecting fails N times in a row, microcontroller.reset() is a blunt but effective fix, and it’s what most always-on CircuitPython projects do. You can also enable the watchdog (microcontroller.watchdog) so a hang forces a reboot on its own.
 		- Optional: buffer readings. If you care about not losing data during outages, keep the last few readings in a list and flush them when Wi-Fi returns. With a 30s to 5 min interval you’d only need a small buffer, and RAM is the limit, so cap it.

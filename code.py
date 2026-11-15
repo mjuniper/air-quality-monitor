@@ -1,3 +1,5 @@
+import microcontroller
+from watchdog import WatchDogMode
 import board
 import digitalio
 import neopixel
@@ -8,14 +10,20 @@ import adafruit_sen6x
 from thresholds import thresholds
 from reporters.display import DisplayReporter
 from reporters.db import InfluxDbReporter
-from reporters.flaky import FlakyReporter
+# from reporters.flaky import FlakyReporter
 # from reporters.notifier import NotificationReporter
 # import gc
 
 # TODO: we will probably want this to be something like 2 - 5 minutes
 # but in development we want a shorter interval to better understand if it is working
-sampling_interval = 2 * 60 * 1000
-# sampling_interval = 15 * 1000
+sampling_interval = 30 * 1000
+# sampling_interval = 5 * 1000
+
+# Arm the watchdog BEFORE the sensor init, so a crash during boot also ends in a reset.
+wdt = microcontroller.watchdog
+wdt.timeout = max(60, 3 * sampling_interval / 1000)  # seconds; ~6 min at 2 min
+wdt.mode = WatchDogMode.RESET
+wdt.feed()
 
 # check buttons at startup...
 # hold D1 to calibrate scd30 based on eCO2 reading from the ens160
@@ -53,6 +61,16 @@ def report(data):
       display_reporter.clearError(reporter.name)
     except Exception as e:
       display_reporter.logError(reporter.name, e)
+
+# #####
+# did the watchdog just restart us?
+# #####
+# A reset wipes the in-RAM error log, so without this we'd never know it
+# happened. Log it now; it clears itself after the first good sensor read and
+# then shows on the log page as "watchdog: ok for ...".
+print("Reset reason:", microcontroller.cpu.reset_reason)
+if microcontroller.cpu.reset_reason == microcontroller.ResetReason.WATCHDOG:
+  display_reporter.logError("watchdog", "restarted after stall")
 
 # #####
 # setup to read sensors
@@ -107,6 +125,10 @@ while True:
           "pm10": sensor_data["pm10"],
         }
         display_reporter.clearError("sensor")
+        display_reporter.clearError("watchdog")  # no-op unless we just restarted
+        wdt.feed()
+      else:
+        raise RuntimeError("sensor data not ready")
     except Exception as e:
       display_reporter.logError("sensor", e)
 

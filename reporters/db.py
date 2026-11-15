@@ -84,37 +84,3 @@ class InfluxDbReporter:
       self.session = None  # rebuild next time
       raise
   
-  # def report(self, data):
-  #   if not self.ensure_wifi():
-  #     print("InfluxDbReporter: skipping report; Wi-Fi is not connected.")
-  #     return
-
-  #   try:
-  #     # Influx line protocol: "<measurement> field=value,field=value"
-  #     # https://docs.influxdata.com/influxdb/v1.8/guides/write_data/#write-data-using-the-influxdb-api
-  #     #
-  #     # Skip None (and NaN, which is the only value not equal to itself).
-  #     # A single bad value makes Influx reject the whole line.
-  #     fields = ",".join(
-  #       f"{k}={v}" for k, v in data.items() if v is not None and v == v
-  #     )
-  #     if not fields:
-  #       print("InfluxDbReporter: no valid fields to report.")
-  #       return
-
-  #     point = self.table + " " + fields
-  #     url = f"http://{self.host}:{self.port}/write?db={self.database}"
-  #     headers = {"Authorization": f"Token {self.username}:{self.password}"}
-
-  #     response = self.session.post(url, data=point, headers=headers, timeout=5)
-  #     try:
-  #       if not 200 <= response.status_code < 300:
-  #         print("InfluxDbReporter error: HTTP " + str(response.status_code))
-  #     finally:
-  #       # Always close, or sockets leak and you eventually run out.
-  #       response.close()
-
-  #   except Exception as e:
-  #     print("InfluxDbReporter error: " + str(e))
-  #     # Drop the session so the next report rebuilds it from scratch.
-  #     self.session = None
