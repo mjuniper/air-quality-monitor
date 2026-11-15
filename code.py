@@ -13,8 +13,8 @@ from reporters.db import InfluxDbReporter
 
 # TODO: we will probably want this to be something like 2 - 5 minutes
 # but in development we want a shorter interval to better understand if it is working
-# sampling_interval = 2 * 60 * 1000
-sampling_interval = 30 * 1000
+sampling_interval = 2 * 60 * 1000
+# sampling_interval = 30 * 1000
 
 # check buttons at startup...
 # hold D1 to calibrate scd30 based on eCO2 reading from the ens160
