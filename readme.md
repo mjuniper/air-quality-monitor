@@ -6,6 +6,9 @@ TODO:
 		- maybe slightly smaller text
 		- maybe integer for voc and nox
 		- maybe tweak the gridlayout
+	- sensor...
+		- calibration?
+		- fan cleaning? - maybe automatically once a week
 	- better error handling
 	- get the notification reporter working
 	- see TODOS in code files
