@@ -12,7 +12,7 @@ from reporters.display import DisplayReporter
 from reporters.db import InfluxDbReporter
 # from reporters.flaky import FlakyReporter
 # from reporters.notifier import NotificationReporter
-# import gc
+import gc
 
 # TODO: we will probably want this to be something like 2 - 5 minutes
 # but in development we want a shorter interval to better understand if it is working
@@ -152,12 +152,17 @@ while True:
 
     pixel.fill((255, 0, 0) if display_reporter.has_errors else (0, 0, 0))
 
-    # i think i have a memory leak... or maybe that is just the way python works???
-    # free memory continuously falls with every iteration of the loop until it gets down to a few k
-    # then it goes back up - presumably because garbage collection happened
-    # if i manually do garbage collection as below, it stays high
-    # but i think we will let garbage collection happen on its own
-    # gc.collect())
+    # Collect garbage ourselves once per cycle instead of waiting for the heap to
+    # run low. Free memory falling to a few KB and then jumping back up is normal
+    # CircuitPython behavior (garbage piles up until a collection is forced), not
+    # a leak. Collecting on our own schedule is still better:
+    #   - it happens at a time we choose, right after reporting, instead of
+    #     automatically in the middle of the next HTTP request or display update
+    #   - it limits heap fragmentation: a big allocation (HTTP/SSL buffers, a
+    #     label redraw) can fail even with lots of free RAM if that RAM is
+    #     scattered in small pieces
+    #   - it's cheap: a few ms once per sampling interval
+    gc.collect()
 
     sensor_clock = ticks_add(sensor_clock, sampling_interval)
 
