@@ -87,6 +87,14 @@ time.sleep(12)
 display_reporter.showMessage("Measurement started")
 time.sleep(3)
 
+# The sensor's error flags are "sticky" and the sensor keeps power across our own
+# resets (watchdog, code reload), so clear any left over from before. If a real
+# fault persists, the sensor sets them again on its own.
+try:
+  sensor.clear_device_status()
+except Exception as e:
+  print("clear_device_status failed: " + str(e))
+
 # #####
 # loop!
 # #####
@@ -131,6 +139,13 @@ while True:
         raise RuntimeError("sensor data not ready")
     except Exception as e:
       display_reporter.logError("sensor", e)
+      # Sticky flags stay set after the problem goes away until cleared. Clear
+      # them so the next read reflects the current state, not a stale flag.
+      # If the fault is real, the sensor sets them again.
+      try:
+        sensor.clear_device_status()
+      except Exception as clear_error:
+        print("clear_device_status failed: " + str(clear_error))
 
     if data is not None:
       report(data)
