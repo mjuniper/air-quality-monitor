@@ -17,6 +17,7 @@ import time
 import board
 import terminalio
 import displayio
+import vectorio
 from adafruit_display_text import bitmap_label, wrap_text_to_pixels
 from adafruit_displayio_layout.layouts.grid_layout import GridLayout
 from adafruit_displayio_layout.layouts.page_layout import PageLayout
@@ -39,12 +40,35 @@ METRICS = {
   "hum":  {"label": "HUM", "fmt": "%.1f"},
 }
 
+# Each page is a tuple of ROWS, and each row is a tuple of metric keys, left to
+# right. A page with one row shows its metrics side by side; a page with two
+# rows is a 2x2 grid. The button cycles through these in order.
 PAGES = (
-  ("voc", "pm25", "co2"),
-  ("temp", "hum"),
-  ("voc", "nox"),
-  ("pm1", "pm4", "pm10"),
+  (("pm25", "voc"),
+   ("co2", "nox")),
+  (("temp", "hum"),),
+  (("pm1", "pm25"),
+   ("pm4", "pm10")),
 )
+
+# Text sizes by how many rows a page has: (value scale, name scale). Single-row
+# pages keep the original small text. On a 2-row page each metric still gets a
+# wide cell (half the screen) and about 67px of height, so it can use bigger text.
+# Change these numbers if the 2x2 pages look too big or too small.
+SCALES = {1: (3, 2), 2: (3, 2)}
+
+# Pixels between a metric's value and its name, measured between their text BOXES.
+# Each label's box includes the font's own padding (room below the baseline for
+# descenders, room above the capitals), and that padding is multiplied by the text
+# scale. So the visible gap is much bigger than this number, and changing it by a
+# pixel or two is hard to see. Negative values pull the pair closer (the boxes just
+# overlap, which is harmless); try -6 to -8 for a visibly tighter look.
+NAME_GAP = -4
+
+# While tuning the layout, draw thin lines between the metric cells. Set this to
+# False (or delete it and _grid_lines) when you're done.
+SHOW_GRID = True
+GRID_COLOR = 0x444444
 
 # Page indexes inside the PageLayout, which follow the order we add them in:
 # data pages first, then the log page, then the transient message page.
@@ -62,6 +86,38 @@ LOG_MAX_LINES = 12
 
 def _label(text, scale):
   return bitmap_label.Label(terminalio.FONT, text=text, scale=scale)
+
+
+def _stack_anchors(cell_height, value_scale, name_scale):
+  # Returns the vertical anchors (0..1, one for the value label and one for the
+  # name label) that stack the value above its name, NAME_GAP pixels apart, with
+  # the pair centered in a cell that is cell_height pixels tall. Each label's
+  # anchor says where its own top-to-bottom span lines up within the cell, so
+  # anchor = (the top y we want) / (cell height - label height).
+  font_height = terminalio.FONT.get_bounding_box()[1]  # line height at scale 1
+  value_height = font_height * value_scale
+  name_height = font_height * name_scale
+  top = (cell_height - (value_height + NAME_GAP + name_height)) / 2
+  value_anchor = top / (cell_height - value_height)
+  name_anchor = (top + value_height + NAME_GAP) / (cell_height - name_height)
+  return value_anchor, name_anchor
+
+
+def _grid_lines(width, height, columns, rows):
+  # Thin lines between the LOGICAL cells of a page: one metric (its value plus its
+  # name) is a cell, so there's no line between a value and its name, and none
+  # around the outside of the screen. Returns a list of shapes to draw on top of
+  # the page. Lines are 1px wide and fall on the boundaries of an even split.
+  palette = displayio.Palette(1)
+  palette[0] = GRID_COLOR
+  lines = []
+  for column in range(1, columns):
+    x = width * column // columns
+    lines.append(vectorio.Rectangle(pixel_shader=palette, width=1, height=height, x=x, y=0))
+  for row in range(1, rows):
+    y = height * row // rows
+    lines.append(vectorio.Rectangle(pixel_shader=palette, width=width, height=1, x=0, y=y))
+  return lines
 
 
 def _age(ns):
@@ -103,15 +159,30 @@ class DisplayReporter:
     self.pages = PageLayout(0, 0)
 
     # ---- data pages (indexes 0 .. len(PAGES)-1) ----
-    for page_index, keys in enumerate(PAGES):
-      grid = GridLayout(0, 0, width, height, grid_size=(len(keys), 2))
-      for column, key in enumerate(keys):
-        value_label = _label("000", 2)
-        name_label = _label(METRICS[key]["label"], 1)
-        grid.add_content(value_label, (column, 0), (1, 1), (0.5, 0.9))
-        grid.add_content(name_label, (column, 1), (1, 1), (0.5, 0.1))
-        self.cells[key].append((value_label, name_label))
-      self.pages.add_content(grid, page_name=f"mode{page_index}")
+    for page_index, rows in enumerate(PAGES):
+      value_scale, name_scale = SCALES[len(rows)]
+
+      # One grid cell per metric; the grid is as wide as the widest row. A metric's
+      # value and name both go in its cell, stacked and centered as a unit (see
+      # _stack_anchors), so there is equal space above and below each metric.
+      columns = max(len(keys) for keys in rows)
+      grid = GridLayout(0, 0, width, height, grid_size=(columns, len(rows)))
+      value_anchor, name_anchor = _stack_anchors(height // len(rows), value_scale, name_scale)
+      for row, keys in enumerate(rows):
+        for column, key in enumerate(keys):
+          value_label = _label("000", value_scale)
+          name_label = _label(METRICS[key]["label"], name_scale)
+          grid.add_content(value_label, (column, row), (1, 1), (0.5, value_anchor))
+          grid.add_content(name_label, (column, row), (1, 1), (0.5, name_anchor))
+          self.cells[key].append((value_label, name_label))
+      page = grid
+      if SHOW_GRID:
+        # Wrap the grid in a Group so the lines are drawn on top of it.
+        page = displayio.Group()
+        page.append(grid)
+        for line in _grid_lines(width, height, columns, len(rows)):
+          page.append(line)
+      self.pages.add_content(page, page_name=f"mode{page_index}")
 
     # ---- log page (index LOG_PAGE) ----
     # One multi-line label anchored to the top-left corner.

@@ -1,3 +1,5 @@
+import os
+
 import microcontroller
 from watchdog import WatchDogMode
 import board
@@ -80,7 +82,7 @@ if microcontroller.cpu.reset_reason == microcontroller.ResetReason.WATCHDOG:
 stemma_i2c = board.STEMMA_I2C()
 
 sensor = adafruit_sen6x.SEN66(stemma_i2c)
-sensor.sensor_altitude = 1525
+sensor.sensor_altitude = int(os.getenv("altitude", 0))
 display_reporter.showMessage("Sensor initialized")
 sensor.start_measurement()
 # Note: CO2 values will be 0xFFFF for first 5-6 seconds after measurement start.
