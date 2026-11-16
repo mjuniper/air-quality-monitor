@@ -1,4 +1,6 @@
 TODO:
+	- i wonder if i could fit 4 metrics on the first screen: pm2.5, co2, voc, nox
+  - update libs: circup --path /Volumes/CIRCUITPY update --all
 	- suggestions from claude:
 		- The Wi-Fi failure reason gets lost.
 		- If the first read fails, the screen sticks on “Measurement started”.
@@ -7,7 +9,6 @@ TODO:
 		- Optional: buffer readings. If you care about not losing data during outages, keep the last few readings in a list and flush them when Wi-Fi returns. With a 30s to 5 min interval you’d only need a small buffer, and RAM is the limit, so cap it.
 	- get the notification reporter working
 	- see TODOS in code files
-	- use asyncio (or something) to make it respond to button presses by changing the display mode - do this now but it is janky
 	- update this file...
 		- as built
 	- push all changes upstream
@@ -33,17 +34,13 @@ Use **Terminal > Run Task** to run the tasks in [.vscode/tasks.json](.vscode/tas
 - **install_deps**: Install libraries from the committed `requirements.txt` onto
   the board. Use this when setting up a fresh board.
 - **deploy**: Copy local `settings.toml`, Python files in `reporters/`, then
-  `code.py`, and flush pending writes. Local settings overwrite the board's
+  `code.py`, `thresholds.py`, and flush pending writes. Local settings overwrite the board's
   settings on every deployment; deployment fails before copying if the local
-  file is missing. This does not copy `lib/`, snippets, Git/editor files, or
-  `secrets.py`, and does not delete existing board files. CircuitPython may
+  file is missing. This does not copy `lib/`, snippets, or Git/editor files, and does not delete existing board files. CircuitPython may
   reload while files are copied; check the serial console after deployment.
 
 For initial setup, run `add_deps`, configure local `settings.toml`, then `deploy`.
-Keep `settings.toml` excluded from Git even though it is deployed. Restore
-`secrets.py` separately if the application still uses it; it is excluded from Git
-and deployment. Back up private configuration separately before firmware or
-bootloader upgrades.
+Back up private configuration separately before firmware or bootloader upgrades.
 
 For library updates, run `circup --path /Volumes/CIRCUITPY update --all`, test the
 application, then run `circup --path /Volumes/CIRCUITPY freeze -r` and review the
@@ -62,20 +59,6 @@ The reporters do not run their own reconnect loops.
 Run the host-side reporter tests without board hardware using
 `python3 -m unittest discover -s tests`.
 
-https://circuitpython.org/board/adafruit_feather_esp32s3_reverse_tft/
-
-https://learn.adafruit.com/adafruit-ens160-mox-gas-sensor/circuitpython-python
-https://learn.adafruit.com/adafruit-scd30/python-circuitpython
-https://learn.adafruit.com/pmsa003i/python-circuitpython
-
-https://www.airthings.com/view-plus
-
-- Particulates (PM1, PM2.5, & PM10)
-- VOCs
-- CO2
-- Temp, humidity, pressure
-- Radon
-
 ===
 As built:
 - scd30 measures CO2 and temp
@@ -90,78 +73,12 @@ As built:
 	- button 1 calibrates against eCO2 reading from the ens160 this is probably not very accurate
 	- button 2 calibrates against outside air and assumes it is 425 which should be in the right ballpark
 
-TODO:
-- reconnect to wifi if we lose connection
-	- also do this for the basement monitor
-- skip reading the sensors if the data is invalid
-	- i already try to do this but it needs improvement
-- the way i have coded it to respond but button 0 is janky
-- it would be nice to measure radon
-- it would be nice to measure CO
-- i need an enclosure
-===
+https://circuitpython.org/board/adafruit_feather_esp32s3_reverse_tft/
 
-Original plan:
-1. read sensors every 5 minutes. I could do it more frequently but the airthings has an interval of 5 minutes and i think we should not update the e-ink display (if that is what i end up using) any more frequently than every 3 minutes.
-2. send data to reporters
-	1. post data to influxdb
-	2. write data to display (if using a color display, i could use color to denote that it is in or out of expected range - check airthings specs for ranges to use
-	3. if out of range post data to pushover
+Inspired by https://www.airthings.com/view-plus
 
-===
-
-I'd like to do something like this to change the display mode (what info it dispays) when you press the 3 buttons
-https://learn.adafruit.com/adafruit-esp32-s3-tft-feather/multitasking-with-asyncio
-pm25, aqi, co2, hum, temp, voc (there are other pm details i could show too)
-pm25, aqi, co2, voc
-
-________________________
-| 2.5               200 |
-| PM2.5             VOC |
-|                       |
-| 22                686 |
-| AQI               CO2 |
-------------------------
-
-
-===
-
-## threshold levels
-Particulate matter (PM2.5)
-red ≥25 μg/m3
-yellow ≥10 and <25 μg/m3
-green <10 μg/m3
-
-Carbon dioxide (CO2)
-red ≥1000 ppm
-yellow ≥800 and <1000 ppm
-green <800 ppm
-
-Humidity
-red ≥70 %
-yellow ≥60 and <70 %
-green ≥30 and <60 %
-yellow ≥25 and <30 %
-red <25 %
-
-Temperature (°F)
-red >77 °F
-yellow ≥64 and ≤77 °F
-blue <64 °F
-
-Airborne chemicals (VOC)
-red ≥2000 ppb
-yellow ≥250 and <2000 ppb
-green <250 ppb
-
----
-
-Radon (pCi/L)
-red ≥4 pCi/L
-yellow ≥2.7 and <4 pCi/L
-green <2.7 pCi/L
-
-Radon (Bq/m3)
-red ≥150 Bq/m3
-yellow ≥100 and <150 Bq/m3
-green <100 Bq/m3
+- Particulates (PM1, PM2.5, & PM10)
+- VOCs
+- CO2
+- Temp, humidity, pressure
+- Radon

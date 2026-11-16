@@ -1,7 +1,7 @@
 import microcontroller
 from watchdog import WatchDogMode
 import board
-import digitalio
+import keypad
 import neopixel
 from adafruit_ticks import ticks_ms, ticks_add, ticks_diff
 import time
@@ -34,8 +34,10 @@ wdt.feed()
 # calibrate_outside.switch_to_input(pull=digitalio.Pull.DOWN)
 # calibrate_scd = calibrate_ambient.value or calibrate_outside.value
 # press button 0 to change display mode
-change_display_mode = digitalio.DigitalInOut(board.D0)
-change_display_mode.switch_to_input(pull=digitalio.Pull.UP)
+# keypad.Keys scans the pin in the background, debounces it, and queues press
+# events. That means one event per press (nothing repeats while held) and presses
+# aren't lost when the loop is busy, e.g. blocked on a slow network request.
+keys = keypad.Keys((board.D0,), value_when_pressed=False, pull=True)
 
 # #####
 # setup neopixel
@@ -98,24 +100,24 @@ except Exception as e:
 # #####
 # loop!
 # #####
-sensor_clock = ticks_ms()
-first_run = True
-last_mode_change = time.time()
+# Track when the next sample is DUE rather than when the last one happened.
+# Starting it at "now" makes the first pass through the loop sample right away,
+# so we don't sit on the boot message for a whole interval (and the watchdog
+# gets its first feed sooner).
+next_sample = ticks_ms()
 while True:
-  if not change_display_mode.value and time.time() - last_mode_change > 0.8:
+  event = keys.events.get()
+  if event and event.pressed:
     display_reporter.incrementMode()
-    last_mode_change = time.time()
 
-  if first_run or ticks_diff(ticks_ms(), sensor_clock) > sampling_interval:
+  # ticks_diff handles the ticks counter wrapping around; >= 0 means "due".
+  if ticks_diff(ticks_ms(), next_sample) >= 0:
 
     pixel.fill((0, 255, 0))
 
     # #####
     # read the sensors
     # #####
-    # TODO: we want to not bring the whole thing down when there is an error
-    # this works for now but we can do better...
-    # it would also be good to know how long it has been failing
     data = None
     try:
       if sensor.data_ready:
@@ -164,8 +166,10 @@ while True:
     #   - it's cheap: a few ms once per sampling interval
     gc.collect()
 
-    sensor_clock = ticks_add(sensor_clock, sampling_interval)
+    # Schedule from now, not from the previous due time, so a slow cycle (say a
+    # network timeout) just pushes the next sample out instead of triggering a
+    # burst of catch-up samples.
+    next_sample = ticks_add(ticks_ms(), sampling_interval)
 
-    if first_run:
-      sensor_clock = ticks_ms()
-      first_run = False
+  # Don't spin flat out between checks; saves power and heat next to the sensor.
+  time.sleep(0.02)

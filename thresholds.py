@@ -16,7 +16,7 @@ thresholds = {
   # 'pm10_caution': ((10, 25),),
   # 'pm10_danger': ((25, float("inf")),),
   "co2_caution": ((900, 1500),),
-  "co2_danger":  ((1500, 10000),),
+  "co2_danger":  ((1200, 10000),),
   "hum_caution": ((20, 30), (50, 60)),
   "hum_danger":  ((0, 20), (60, 101)),
   'temp_caution': ((85, float("inf")),),
