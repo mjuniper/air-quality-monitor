@@ -16,10 +16,7 @@ from reporters.db import InfluxDbReporter
 # from reporters.notifier import NotificationReporter
 import gc
 
-# TODO: we will probably want this to be something like 2 - 5 minutes
-# but in development we want a shorter interval to better understand if it is working
-sampling_interval = 30 * 1000
-# sampling_interval = 5 * 1000
+sampling_interval = int(os.getenv("sampling_interval", 30 * 1000))
 
 # Arm the watchdog BEFORE the sensor init, so a crash during boot also ends in a reset.
 wdt = microcontroller.watchdog
@@ -79,12 +76,28 @@ if microcontroller.cpu.reset_reason == microcontroller.ResetReason.WATCHDOG:
 # #####
 # setup to read sensors
 # #####
-stemma_i2c = board.STEMMA_I2C()
+def init_sensor():
+  # Everything that talks to the sensor at boot. Raises if it can't be reached
+  # (unplugged, loose cable, not up yet), so the caller can retry.
+  sensor = adafruit_sen6x.SEN66(board.STEMMA_I2C())
+  sensor.sensor_altitude = int(os.getenv("altitude", 0))
+  sensor.start_measurement()
+  return sensor
 
-sensor = adafruit_sen6x.SEN66(stemma_i2c)
-sensor.sensor_altitude = int(os.getenv("altitude", 0))
+# Don't let a missing sensor crash code.py (that would leave the board sitting on a
+# traceback). Show the error on screen and keep trying. The watchdog is NOT fed in
+# this loop, so if the sensor still isn't there when it times out, the board
+# reboots, which also clears a stuck I2C bus.
+display_reporter.showMessage("Starting sensor")
+sensor = None
+while sensor is None:
+  try:
+    sensor = init_sensor()
+  except Exception as e:
+    display_reporter.logError("sensor", e)  # also switches the screen to the log page
+    time.sleep(5)
+wdt.feed()  # the sensor answered, so the warm-up and first read get a fresh timeout
 display_reporter.showMessage("Sensor initialized")
-sensor.start_measurement()
 # Note: CO2 values will be 0xFFFF for first 5-6 seconds after measurement start.
 # Note: NOx values will be 0x7FFF for first 10-11 seconds after power-on/reset.
 time.sleep(12)

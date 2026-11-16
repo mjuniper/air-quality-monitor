@@ -24,7 +24,12 @@ class InfluxDbReporter:
     # The HTTP session is created lazily by ensure_wifi(). None means
     # "no usable session right now".
     self.session = None
-    self.ensure_wifi()
+    # Try to get online now. Failing here isn't fatal: report() tries again on
+    # every cycle and records the reason in the error log.
+    try:
+      self.ensure_wifi()
+    except Exception as e:
+      print("InfluxDbReporter: " + str(e))
 
   def _make_session(self):
     # A session wraps a socket pool tied to the current Wi-Fi connection.
@@ -33,7 +38,9 @@ class InfluxDbReporter:
     self.session = adafruit_requests.Session(pool, ssl.create_default_context())
 
   def ensure_wifi(self):
-    # Make sure we're on Wi-Fi and have a live session. Returns True if so.
+    # Make sure we're on Wi-Fi and have a live session. If we can't, raise a
+    # RuntimeError that says why (for example "Wi-Fi: ConnectionError: No network
+    # with that ssid"), so the reason reaches the error log instead of being lost.
     try:
       if not wifi.radio.connected:
         wifi.radio.connect(
@@ -47,16 +54,13 @@ class InfluxDbReporter:
       # settings.toml before we ran) and the post-reconnect case above.
       if self.session is None:
         self._make_session()
-
-      return True
     except Exception as e:
-      print("InfluxDbReporter: WiFi/session setup failed: " + str(e))
       self.session = None
-      return False
+      # Include the exception's type as well, since some have an empty message.
+      raise RuntimeError("Wi-Fi: " + type(e).__name__ + ": " + str(e))
 
   def report(self, data):
-    if not self.ensure_wifi():
-      raise RuntimeError("Wi-Fi not connected")
+    self.ensure_wifi()  # raises, with the reason, if we can't get online
     try:
       # Influx line protocol: "<measurement> field=value,field=value"
       # https://docs.influxdata.com/influxdb/v1.8/guides/write_data/#write-data-using-the-influxdb-api

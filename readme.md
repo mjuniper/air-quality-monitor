@@ -49,7 +49,10 @@ Inspired by https://www.airthings.com/view-plus
   its HTTP session. Requests time out after 5 seconds and failures show up in the
   error log. Readings that fail to send are not queued.
 - **Sensor:** the SEN66's sticky error flags are cleared at boot and after any
-  failed read, so a stale flag can't keep the sensor failing.
+  failed read, so a stale flag can't keep the sensor failing. If the sensor can't
+  be reached at boot, the error is shown on the log page and setup is retried every
+  5 seconds instead of crashing; the watchdog reboots the board if that goes on
+  past its timeout.
 - **Memory:** `gc.collect()` runs once per sampling cycle, so collection happens
   on our schedule and heap fragmentation stays low.
 
@@ -77,10 +80,6 @@ Inspired by https://www.airthings.com/view-plus
 - `tests/` and `snippets/`: host-side tests and scratch code that isn't deployed.
 
 TODO:
-  - update libs: circup --path /Volumes/CIRCUITPY update --all
-	- suggestions from claude:
-		- The Wi-Fi failure reason gets lost.
-		- If the first read fails, the screen sticks on “Measurement started”.
 	- reconnect if we lose wifi - from a conversation with claude:
 		- Fall back to a hard reset. If reconnecting fails N times in a row, microcontroller.reset() is a blunt but effective fix, and it’s what most always-on CircuitPython projects do. You can also enable the watchdog (microcontroller.watchdog) so a hang forces a reboot on its own.
 		- Optional: buffer readings. If you care about not losing data during outages, keep the last few readings in a list and flush them when Wi-Fi returns. With a 30s to 5 min interval you’d only need a small buffer, and RAM is the limit, so cap it.

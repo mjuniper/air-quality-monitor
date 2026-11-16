@@ -255,6 +255,13 @@ class DisplayReporter:
 
     self._refresh_log()
 
+    # If a boot message is still on screen (say the very first sensor read failed),
+    # it would stay there until a report() succeeds, hiding the problem. Show the
+    # log page instead. self.mode is left alone, so once things recover the next
+    # report() returns to the page the button had selected.
+    if self.pages.showing_page_name == "message":
+      self.pages.show_page(page_index=LOG_PAGE)
+
   def clearError(self, source):
     # Record that `source` worked. A no-op unless it was failing. The entry
     # stays in the log as 'ok' so you can still see a blip that happened while
