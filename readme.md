@@ -16,7 +16,7 @@ Inspired by https://www.airthings.com/view-plus
 
 ### What it does
 
-- Reads the SEN66 every 30 seconds (`sampling_interval` in `code.py`). One sensor provides everything: CO2 (ppm), temperature (shown in °F), humidity (%RH), VOC index, NOx index, and
+- Reads the SEN66 every 30 seconds (`sampling_interval` in `settings.toml`). One sensor provides everything: CO2 (ppm), temperature (shown in °F), humidity (%RH), VOC index, NOx index, and
   PM1 / PM2.5 / PM4 / PM10 (µg/m³).
 - Hands each reading to every reporter. A failing reporter never stops the others
   or the sensor loop.
@@ -68,7 +68,7 @@ Inspired by https://www.airthings.com/view-plus
 ### Configuration and files
 
 - `settings.toml` (gitignored): Wi-Fi (`CIRCUITPY_WIFI_SSID`,
-  `CIRCUITPY_WIFI_PASSWORD`), InfluxDB (`db_host`, `db_port`, `db_database`,
+  `CIRCUITPY_WIFI_PASSWORD`), altitude (`altitude`), sampling interval (`sampling_interval`), InfluxDB (`db_host`, `db_port`, `db_database`,
   `db_table`, `db_username`, `db_password`), and Pushover (`pushover_user`,
   `pushover_token`) for the notifier.
 - `thresholds.py`: caution and danger ranges for each metric, as half-open
@@ -80,9 +80,13 @@ Inspired by https://www.airthings.com/view-plus
 - `tests/` and `snippets/`: host-side tests and scratch code that isn't deployed.
 
 TODO:
+	- setup so i can use web workflow
+		- add CIRCUITPY_WEB_API_PASSWORD="SELegend02", CIRCUITPY_WEB_API_PORT=80 to settings.toml
+		- Hold a button while booting to enable usb mass storage, otherwise disable it
+	- i'd like to know how much flash i have used and how much ram i use while running
 	- reconnect if we lose wifi - from a conversation with claude:
-		- Fall back to a hard reset. If reconnecting fails N times in a row, microcontroller.reset() is a blunt but effective fix, and it’s what most always-on CircuitPython projects do. You can also enable the watchdog (microcontroller.watchdog) so a hang forces a reboot on its own.
-		- Optional: buffer readings. If you care about not losing data during outages, keep the last few readings in a list and flush them when Wi-Fi returns. With a 30s to 5 min interval you’d only need a small buffer, and RAM is the limit, so cap it.
+		- Fall back to a hard reset. I took a stab at implementing this but it is not deployed to the board, nor has claude looked at it
+	- ask claude for other suggestions
 	- get the notification reporter working
 	- see TODOS in code files
 	- update this file...
@@ -90,6 +94,8 @@ TODO:
 	- push all changes upstream
 
 ## Development workflow
+
+NOTE: This board is setup for circuitpython web workflow just for convenience. Thus the usb mass storage is disabled by default. When using the below workflow, you must hold D1 while it boots to enable usb mass storage.
 
 Edit application code in this repository and connect the board over USB so it
 mounts as `/Volumes/CIRCUITPY` (not `FTHRS3BOOT`). Install Circup on your Mac with

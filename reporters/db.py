@@ -3,6 +3,7 @@
 # Sends sensor readings to InfluxDB 1.x over HTTP using line protocol.
 # Reads connection info from settings.toml via os.getenv().
 
+import microcontroller
 import os
 import ssl
 import wifi
@@ -26,6 +27,9 @@ class InfluxDbReporter:
     self.session = None
     # Try to get online now. Failing here isn't fatal: report() tries again on
     # every cycle and records the reason in the error log.
+
+    self.wifi_connection_failure_count = 0
+
     try:
       self.ensure_wifi()
     except Exception as e:
@@ -54,8 +58,16 @@ class InfluxDbReporter:
       # settings.toml before we ran) and the post-reconnect case above.
       if self.session is None:
         self._make_session()
+
+      self.wifi_connection_failure_count = 0
     except Exception as e:
       self.session = None
+
+      self.wifi_connection_failure_count += 1
+
+      if self.wifi_connection_failure_count > 12:
+        microcontroller.reset()
+
       # Include the exception's type as well, since some have an empty message.
       raise RuntimeError("Wi-Fi: " + type(e).__name__ + ": " + str(e))
 
