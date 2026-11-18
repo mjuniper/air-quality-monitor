@@ -1,5 +1,5 @@
 import os
-
+import storage
 import microcontroller
 from watchdog import WatchDogMode
 import board
@@ -48,7 +48,6 @@ pixel.brightness = .1
 # setup reporters
 # #####
 reporters = []
-# TODO: i could factor this into a reporter_manager class
 display_reporter = DisplayReporter(thresholds)
 reporters.append(display_reporter)
 reporters.append(InfluxDbReporter())
@@ -133,6 +132,7 @@ while True:
     # #####
     # read the sensors
     # #####
+    print("Reading sensor data...")
     data = None
     try:
       if sensor.data_ready:
@@ -165,6 +165,7 @@ while True:
         print("clear_device_status failed: " + str(clear_error))
 
     if data is not None:
+      print("Sensor data read successfully:", data)
       report(data)
 
     pixel.fill((255, 0, 0) if display_reporter.has_errors else (0, 0, 0))
@@ -179,12 +180,18 @@ while True:
     #     label redraw) can fail even with lots of free RAM if that RAM is
     #     scattered in small pieces
     #   - it's cheap: a few ms once per sampling interval
+    print("Free memory before GC:", gc.mem_free())
     gc.collect()
+    print("Free memory after GC:", gc.mem_free())
+
+    print("Storage free:", storage.get_free())
+
+    print("Cycle complete.")
 
     # Schedule from now, not from the previous due time, so a slow cycle (say a
     # network timeout) just pushes the next sample out instead of triggering a
     # burst of catch-up samples.
     next_sample = ticks_add(ticks_ms(), sampling_interval)
 
-  # Don't spin flat out between checks; saves power and heat next to the sensor.
+  # Don't spin flat out between checks; saves power and heat.
   time.sleep(0.02)

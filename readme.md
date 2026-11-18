@@ -25,7 +25,7 @@ Inspired by https://www.airthings.com/view-plus
   - **InfluxDB** (`reporters/db.py`): writes the readings to InfluxDB 1.x (running
     on pi-anemoi) over HTTP using line protocol.
   - **Notifications** (`reporters/notifier.py`, Pushover): disabled; it still
-    needs updating (see TODO).
+    needs updating.
 - Display pages, cycled with button 0 (D0):
   1. PM2.5, VOC, CO2, NOx (2x2)
   2. Temp, humidity
@@ -80,15 +80,11 @@ Inspired by https://www.airthings.com/view-plus
 - `tests/` and `snippets/`: host-side tests and scratch code that isn't deployed.
 
 TODO:
-	- setup so i can use web workflow
-		- add CIRCUITPY_WEB_API_PASSWORD="SELegend02", CIRCUITPY_WEB_API_PORT=80 to settings.toml
-		- Hold a button while booting to enable usb mass storage, otherwise disable it
-	- i'd like to know how much flash i have used and how much ram i use while running
 	- reconnect if we lose wifi - from a conversation with claude:
-		- Fall back to a hard reset. I took a stab at implementing this but it is not deployed to the board, nor has claude looked at it
+		- Fall back to a hard reset. I took a stab at implementing this but claude has not looked at it
 	- ask claude for other suggestions
 	- get the notification reporter working
-	- see TODOS in code files
+	- what about a reporter_manager class?
 	- update this file...
 		- as built
 	- push all changes upstream

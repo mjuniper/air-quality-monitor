@@ -223,8 +223,8 @@ class DisplayReporter:
   # -------------------------------------------------------------------------
 
   def showMessage(self, msg):
-    """Show big centered status text. The next report() switches back to the
-    selected page, same as before."""
+    # Show big centered status text. The next report() switches back to the
+    # selected page, same as before.
     self.message.text = msg
     self.pages.show_page(page_name="message")
     print(msg)
