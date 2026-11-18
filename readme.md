@@ -80,14 +80,10 @@ Inspired by https://www.airthings.com/view-plus
 - `tests/` and `snippets/`: host-side tests and scratch code that isn't deployed.
 
 TODO:
-	- reconnect if we lose wifi - from a conversation with claude:
-		- Fall back to a hard reset. I took a stab at implementing this but claude has not looked at it
-	- ask claude for other suggestions
 	- get the notification reporter working
 	- what about a reporter_manager class?
-	- update this file...
-		- as built
-	- push all changes upstream
+	- ask claude for other suggestions
+	- update this file - as built
 
 ## Development workflow
 

@@ -180,13 +180,16 @@ while True:
     #     label redraw) can fail even with lots of free RAM if that RAM is
     #     scattered in small pieces
     #   - it's cheap: a few ms once per sampling interval
-    print("Free memory before GC:", gc.mem_free())
+    free_ram_bytes = gc.mem_free()
+    free_ram_kb = free_ram_bytes / 1024
+    print("Free memory before GC:", free_ram_bytes, "bytes (", free_ram_kb, "KB )")
     gc.collect()
-    print("Free memory after GC:", gc.mem_free())
-
-    print("Storage free:", storage.get_free())
+    free_ram_bytes = gc.mem_free()
+    free_ram_kb = free_ram_bytes / 1024
+    print("Free memory after GC:", free_ram_bytes, "bytes (", free_ram_kb, "KB )")
 
     print("Cycle complete.")
+    print("")
 
     # Schedule from now, not from the previous due time, so a slow cycle (say a
     # network timeout) just pushes the next sample out instead of triggering a
