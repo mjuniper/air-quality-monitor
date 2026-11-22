@@ -1,0 +1,35 @@
+# Copy this file to settings.toml and fill in the values. settings.toml is gitignored.
+# CircuitPython reads it on the board too, so `npm run deploy` copies it over.
+
+# Wi-Fi: the board connects with these on its own at boot
+CIRCUITPY_WIFI_SSID="your-network"
+CIRCUITPY_WIFI_PASSWORD="your-wifi-password"
+
+# The board's name on the network: lowercase letters, digits and hyphens only (no
+# underscores). code.py also advertises it over mDNS, so the board is reachable at
+# <hostname>.local, and the deploy scripts use it.
+CIRCUITPY_WIFI_HOSTNAME="esp-air"
+
+# Web workflow. Use a password that is different from every other one here.
+# Leave the User field blank when you type the password into the browser.
+CIRCUITPY_WEB_API_PASSWORD="choose-a-password"
+CIRCUITPY_WEB_API_PORT=80
+
+# How often to take a reading, in milliseconds (30000 = 30 seconds)
+sampling_interval=30000
+
+# Your altitude in meters, for the SEN66's pressure compensation
+altitude=0
+
+# Pin for the recovery button read by boot.py: press and hold it while the
+# NeoPixel is blue after a reset to keep USB mass storage enabled. D1 and D2 are
+# active high; D0 (the BOOT button) is active low.
+button_pin="D1"
+
+# InfluxDB 1.x
+db_host="influx-host.local"
+db_port=8086
+db_database="database"
+db_table="measurement"
+db_username="user"
+db_password="password"

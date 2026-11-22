@@ -6,6 +6,8 @@ STEMMA QT). Readings go to the built-in screen and to InfluxDB.
 
 Board: https://circuitpython.org/board/adafruit_feather_esp32s3_reverse_tft/
 
+CircuitPython web workflow: http://esp-air.local/code/
+
 Inspired by https://www.airthings.com/view-plus
 
 - Particulates (PM1, PM2.5, & PM10)
@@ -67,10 +69,16 @@ Inspired by https://www.airthings.com/view-plus
 
 ### Configuration and files
 
-- `settings.toml` (gitignored): Wi-Fi (`CIRCUITPY_WIFI_SSID`,
-  `CIRCUITPY_WIFI_PASSWORD`), altitude (`altitude`), sampling interval (`sampling_interval`), InfluxDB (`db_host`, `db_port`, `db_database`,
-  `db_table`, `db_username`, `db_password`), and Pushover (`pushover_user`,
-  `pushover_token`) for the notifier.
+- `settings.toml` (gitignored; copy `settings.toml.example`): Wi-Fi
+  (`CIRCUITPY_WIFI_SSID`, `CIRCUITPY_WIFI_PASSWORD`), the board's name
+  (`CIRCUITPY_WIFI_HOSTNAME`, `esp-air`; `code.py` also advertises it as
+  `esp-air.local`, which the scripts use), web workflow
+  (`CIRCUITPY_WEB_API_PASSWORD`, `CIRCUITPY_WEB_API_PORT`), altitude (`altitude`),
+  sampling interval (`sampling_interval`), the recovery button (`button_pin`),
+  InfluxDB (`db_host`, `db_port`, `db_database`, `db_table`, `db_username`,
+  `db_password`), and Pushover (`pushover_user`, `pushover_token`) for the notifier.
+- `boot.py`: hides the USB drive unless the recovery button is pressed (see below).
+- `scripts/`, `package.json`: Node scripts behind the npm commands below.
 - `thresholds.py`: caution and danger ranges for each metric, as half-open
   `(min, max)` pairs. Safe to commit.
 - `code.py`: setup and the main loop.
@@ -80,6 +88,7 @@ Inspired by https://www.airthings.com/view-plus
 - `tests/` and `snippets/`: host-side tests and scratch code that isn't deployed.
 
 TODO:
+  - update notion, update hass stuff for the new hostname (esp-air)
 	- get the notification reporter working
 	- what about a reporter_manager class?
 	- ask claude for other suggestions
@@ -87,39 +96,46 @@ TODO:
 
 ## Development workflow
 
-NOTE: This board is setup for circuitpython web workflow just for convenience. Thus the usb mass storage is disabled by default. When using the below workflow, you must hold D1 while it boots to enable usb mass storage.
+Everything normally goes over Wi-Fi with web workflow, so `boot.py` hides the USB
+drive (web workflow can only write files while a computer isn't mounting it).
+Run `npm install` once, and `pipx install circup` for the dependency tasks. All of
+these are VS Code tasks (**Terminal > Run Task**,
+[.vscode/tasks.json](.vscode/tasks.json)):
 
-Edit application code in this repository and connect the board over USB so it
-mounts as `/Volumes/CIRCUITPY` (not `FTHRS3BOOT`). Install Circup on your Mac with
-`pipx install circup` and make sure `circup` is available in the VS Code terminal.
-The dependency tasks add pipx's default executable directory (`~/.local/bin`) to
-their PATH, so they also work when VS Code was launched without that directory
-in its environment. For interactive terminals, run `pipx ensurepath` and restart
-the terminal if `circup` is not found.
+- **deploy** (`npm run deploy`): copy `settings.toml`, `thresholds.py`, `boot.py`,
+  `reporters/*.py` and `code.py` to the board at `<CIRCUITPY_WIFI_HOSTNAME>.local`.
+  The password comes from your local `settings.toml`, which overwrites the board's
+  copy. CircuitPython reloads as files land (you may see it restart a few times);
+  `code.py` goes last. `boot.py` only takes effect after a reset. Doesn't copy
+  `lib/`, snippets or tests, and doesn't delete files on the board.
+- **fetch_from_board** (`npm run fetch-from-board`): copy files from the board to
+  this directory, for when you edited with the web workflow code editor. Skips
+  `lib/`. Then commit and push with git.
+- **add_deps** / **install_deps**: circup over web workflow. `add_deps` installs the
+  libraries `code.py` and the reporters import, then writes `requirements.txt`
+  (review it; it lists everything on the board). `install_deps` installs from it
+  onto a fresh board. To run any other circup command over web workflow:
+  `npm run circup -- update --all`.
+- **deploy_usb**, **add_deps_usb**, **install_deps_usb**: the same over a mounted
+  `/Volumes/CIRCUITPY`, for recovery mode.
 
-Use **Terminal > Run Task** to run the tasks in [.vscode/tasks.json](.vscode/tasks.json):
+For initial setup: copy `settings.toml.example` to `settings.toml` and fill it in,
+get the board into recovery mode (below), run `install_deps_usb` and `deploy_usb`,
+then reset normally. After that, use the web workflow tasks. Back up private
+configuration separately before firmware or bootloader upgrades.
 
-- **add_deps**: Scan local `code.py` and all Python files directly in `reporters/`,
-  install their recognized bundle libraries and dependencies on the board, then
-  save the board's library inventory to local `requirements.txt`. This includes
-  optional reporters, but excludes development snippets. Review and commit the
-  generated dependency list. It inventories all installed libraries, including
-  any unrelated ones; it does not remove unused libraries.
-- **install_deps**: Install libraries from the committed `requirements.txt` onto
-  the board. Use this when setting up a fresh board.
-- **deploy**: Copy local `settings.toml`, Python files in `reporters/`, then
-  `code.py`, `thresholds.py`, and flush pending writes. Local settings overwrite the board's
-  settings on every deployment; deployment fails before copying if the local
-  file is missing. This does not copy `lib/`, snippets, or Git/editor files, and does not delete existing board files. CircuitPython may
-  reload while files are copied; check the serial console after deployment.
+For library updates: `npm run circup -- update --all`, test, then `add_deps` to
+refresh `requirements.txt`. Circup picks compiled libraries for the board's
+CircuitPython version; `lib/` in this repo is not deployed.
 
-For initial setup, run `add_deps`, configure local `settings.toml`, then `deploy`.
-Back up private configuration separately before firmware or bootloader upgrades.
+### Recovery mode (USB mass storage)
 
-For library updates, run `circup --path /Volumes/CIRCUITPY update --all`, test the
-application, then run `circup --path /Volumes/CIRCUITPY freeze -r` and review the
-updated dependency list. Circup selects compiled libraries for the board's
-CircuitPython version; the repository's existing `lib/` is not deployed.
+Tap RESET, then press and hold the button (`button_pin`, D1 by default) while the
+NeoPixel is blue (about 3 seconds). It turns green and the `CIRCUITPY` drive shows
+up. Holding it through the reset works too. While the drive is mounted on a
+computer, web workflow can't write files (deploy reports a 409). Don't use D0 (BOOT)
+held through a reset: that puts the chip in its ROM bootloader instead. If
+`button_pin` is wrong, `boot.py` leaves USB enabled rather than locking you out.
 
 ## Network reporting
 

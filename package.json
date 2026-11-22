@@ -1,0 +1,17 @@
+{
+  "name": "air-quality-monitor",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "fetch-from-board": "node scripts/fetchFromBoard",
+    "deploy": "node scripts/deployToBoard",
+    "circup": "node scripts/circup"
+  },
+  "type": "module",
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "node-fetch": "^3.3.1"
+  }
+}

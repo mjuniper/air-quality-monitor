@@ -1,5 +1,6 @@
 import os
-import storage
+import mdns
+import wifi
 import microcontroller
 from watchdog import WatchDogMode
 import board
@@ -7,7 +8,6 @@ import keypad
 import neopixel
 from adafruit_ticks import ticks_ms, ticks_add, ticks_diff
 import time
-# import wifi
 import adafruit_sen6x
 from thresholds import thresholds
 from reporters.display import DisplayReporter
@@ -18,10 +18,26 @@ import gc
 
 sampling_interval = int(os.getenv("sampling_interval", 30 * 1000))
 
+# The web workflow advertises the board as cpy-<board>-<mac>.local, and
+# CIRCUITPY_WIFI_HOSTNAME only sets the name the router sees (DHCP). Set the mDNS
+# name to match, so <hostname>.local (esp-air.local) works too. This resets on
+# every reload, so it lives here, early.
+hostname = os.getenv("CIRCUITPY_WIFI_HOSTNAME")
+if hostname:
+  try:
+    mdns.Server(wifi.radio).hostname = hostname
+  except Exception as e:
+    print("mDNS hostname not set:", e)
+
 # Arm the watchdog BEFORE the sensor init, so a crash during boot also ends in a reset.
+# Once armed it keeps running across code reloads (only a hard reset stops it), and
+# setting the timeout on a running one raises "IDFError: Invalid argument" (which
+# web-workflow deploys would trigger on every reload). So only arm it if it isn't
+# already running; after a reload it keeps its existing timeout.
 wdt = microcontroller.watchdog
-wdt.timeout = max(60, 3 * sampling_interval / 1000)  # seconds; ~6 min at 2 min
-wdt.mode = WatchDogMode.RESET
+if wdt.mode != WatchDogMode.RESET:
+  wdt.timeout = max(60, 3 * sampling_interval // 1000)  # seconds
+  wdt.mode = WatchDogMode.RESET
 wdt.feed()
 
 # check buttons at startup...

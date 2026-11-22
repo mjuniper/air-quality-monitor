@@ -4,10 +4,36 @@
     {
       "label": "deploy",
       "type": "process",
+      "command": "npm",
+      "args": ["run", "deploy"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:${env:PATH}"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "fetch_from_board",
+      "type": "process",
+      "command": "npm",
+      "args": ["run", "fetch-from-board"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:${env:PATH}"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "deploy_usb",
+      "type": "process",
       "command": "/bin/bash",
       "args": [
         "-c",
-        "set -euo pipefail; if [ ! -d /Volumes/CIRCUITPY ] || [ ! -f /Volumes/CIRCUITPY/boot_out.txt ]; then printf '%s\\n' 'CIRCUITPY is not mounted. Connect the board in CircuitPython mode.' >&2; exit 1; fi; if [ ! -f settings.toml ]; then printf '%s\\n' 'Local settings.toml is missing. Create it before deploying.' >&2; exit 1; fi; cp settings.toml /Volumes/CIRCUITPY/settings.toml; rsync -av --exclude='._*' --exclude='__pycache__/' --include='*/' --include='*.py' --exclude='*' reporters/ /Volumes/CIRCUITPY/reporters/; cp code.py /Volumes/CIRCUITPY/code.py; cp thresholds.py /Volumes/CIRCUITPY/thresholds.py; sync"
+        "set -euo pipefail; if [ ! -d /Volumes/CIRCUITPY ] || [ ! -f /Volumes/CIRCUITPY/boot_out.txt ]; then printf '%s\\n' 'CIRCUITPY is not mounted. Reset the board and hold the button while the NeoPixel is blue.' >&2; exit 1; fi; if [ ! -f settings.toml ]; then printf '%s\\n' 'Local settings.toml is missing. Create it from settings.toml.example before deploying.' >&2; exit 1; fi; cp settings.toml /Volumes/CIRCUITPY/settings.toml; cp thresholds.py /Volumes/CIRCUITPY/thresholds.py; cp boot.py /Volumes/CIRCUITPY/boot.py; rsync -av --exclude='._*' --exclude='__pycache__/' --include='*/' --include='*.py' --exclude='*' reporters/ /Volumes/CIRCUITPY/reporters/; cp code.py /Volumes/CIRCUITPY/code.py; sync"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
@@ -20,8 +46,37 @@
       "command": "/bin/bash",
       "args": [
         "-c",
-        "set -euo pipefail; if [ ! -d /Volumes/CIRCUITPY ] || [ ! -f /Volumes/CIRCUITPY/boot_out.txt ]; then printf '%s\\n' 'CIRCUITPY is not mounted. Connect the board in CircuitPython mode.' >&2; exit 1; fi; for source in ./code.py ./reporters/*.py; do circup --path /Volumes/CIRCUITPY install --auto --auto-file \"$source\"; done; circup --path /Volumes/CIRCUITPY freeze -r"
+        "set -euo pipefail; for source in ./code.py ./reporters/*.py; do npm run --silent circup -- install --auto --auto-file \"$source\"; done; npm run --silent circup -- freeze -r"
       ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:${env:HOME}/.local/bin:${env:PATH}"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "add_deps_usb",
+      "type": "process",
+      "command": "/bin/bash",
+      "args": [
+        "-c",
+        "set -euo pipefail; if [ ! -d /Volumes/CIRCUITPY ] || [ ! -f /Volumes/CIRCUITPY/boot_out.txt ]; then printf '%s\\n' 'CIRCUITPY is not mounted. Reset the board and hold the button while the NeoPixel is blue.' >&2; exit 1; fi; for source in ./code.py ./reporters/*.py; do circup --path /Volumes/CIRCUITPY install --auto --auto-file \"$source\"; done; circup --path /Volumes/CIRCUITPY freeze -r"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PATH": "${env:HOME}/.local/bin:${env:PATH}"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "install_deps_usb",
+      "type": "process",
+      "command": "circup",
+      "args": ["--path", "/Volumes/CIRCUITPY", "install", "-r", "requirements.txt"],
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
@@ -33,18 +88,12 @@
     {
       "label": "install_deps",
       "type": "process",
-      "command": "circup",
-      "args": [
-        "--path",
-        "/Volumes/CIRCUITPY",
-        "install",
-        "-r",
-        "requirements.txt"
-      ],
+      "command": "npm",
+      "args": ["run", "--silent", "circup", "--", "install", "-r", "requirements.txt"],
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "PATH": "${env:HOME}/.local/bin:${env:PATH}"
+          "PATH": "/opt/homebrew/bin:/usr/local/bin:${env:HOME}/.local/bin:${env:PATH}"
         }
       },
       "problemMatcher": []

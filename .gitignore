@@ -1,4 +1,8 @@
 secrets.py
+package-lock.json
+node_modules
 settings.toml
+secrets.js
 .DS_Store
 .Trashes
+__pycache__
